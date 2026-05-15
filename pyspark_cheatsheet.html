@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PySpark + Delta Lake Cheat Sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0d0f14;
+    --surface: #141720;
+    --surface2:#1c2030;
+    --border:  #252b40;
+    --accent:  #e8c547;
+    --teal:    #4ecdc4;
+    --red:     #ff6b6b;
+    --purple:  #a78bfa;
+    --green:   #4ade80;
+    --orange:  #fb923c;
+    --text:    #dde4f0;
+    --muted:   #5a6580;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 18px 22px;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--accent);
+  }
+  .header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .header p {
+    color: var(--muted);
+    font-size: 9.5px;
+    margin-top: 3px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* 4-col grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-auto-rows: min-content;
+    gap: 9px;
+    align-items: start;
+  }
+  .span2 { grid-column: span 2; }
+  .span4 { grid-column: 1 / -1; }
+
+  /* CARD */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    font-family: 'Syne', sans-serif;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+  }
+  .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+  .y  { background:#1d1b09; border-bottom:1px solid #38310d; color:var(--accent);  } .dy { background:var(--accent);  }
+  .t  { background:#081c1b; border-bottom:1px solid #0e3230; color:var(--teal);    } .dt { background:var(--teal);    }
+  .r  { background:#1d0c0c; border-bottom:1px solid #3b1818; color:var(--red);     } .dr { background:var(--red);     }
+  .pu { background:#120e1d; border-bottom:1px solid #2a1f4e; color:var(--purple);  } .dp { background:var(--purple);  }
+  .g  { background:#0a1710; border-bottom:1px solid #143820; color:var(--green);   } .dg { background:var(--green);   }
+  .o  { background:#190e06; border-bottom:1px solid #3b2310; color:var(--orange);  } .do { background:var(--orange);  }
+
+  .card-body { padding: 9px 12px; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 5px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .row:last-child { border-bottom: none; }
+  .lbl { color: var(--muted); font-size: 10px; padding-top: 2px; }
+  .pill {
+    background: var(--surface2);
+    border-radius: 3px;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .blk-lbl {
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 7px 0 3px;
+  }
+  .blk-lbl:first-child { margin-top: 0; }
+  .blk {
+    background: var(--surface2);
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 10.5px;
+    color: var(--text);
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .tip, .warn {
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-top: 7px;
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+  .tip  { background:#0b1910; border:1px solid #194d29; border-left:3px solid var(--green);  color:#86efac; }
+  .warn { background:#191200; border:1px solid #493700; border-left:3px solid var(--accent); color:#fde68a; }
+  .tip-lbl, .warn-lbl { font-size:8.5px; letter-spacing:1.5px; text-transform:uppercase; font-weight:700; margin-bottom:3px; }
+  .tip-lbl { color:var(--green); } .warn-lbl { color:var(--accent); }
+
+  .kw { color:var(--purple); } .fn { color:var(--teal); }
+  .st { color:var(--green);  } .nm { color:var(--orange); }
+  .cm { color:var(--muted);  font-style:italic; } .hl { color:var(--accent); }
+
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; padding:10px 14px; }
+    @page { margin:0.25in; size: A2 landscape; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>PySpark + Delta Lake</h1>
+    <p>Complete Transformation &amp; Optimization Cheat Sheet</p>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- ── ROW 1: 4 cards ── -->
+
+  <div class="card">
+    <div class="card-head y"><span class="dot dy"></span>Select &amp; Rename</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Select columns</span><span class="pill"><span class="fn">df.select</span>(<span class="st">"a"</span>, <span class="st">"b"</span>, <span class="st">"c"</span>)</span></div>
+      <div class="row"><span class="lbl">Select with expr</span><span class="pill"><span class="fn">df.selectExpr</span>(<span class="st">"a * 2 as a2"</span>)</span></div>
+      <div class="row"><span class="lbl">Rename column</span><span class="pill"><span class="fn">df.withColumnRenamed</span>(<span class="st">"old"</span>, <span class="st">"new"</span>)</span></div>
+      <div class="row"><span class="lbl">Drop column</span><span class="pill"><span class="fn">df.drop</span>(<span class="st">"col"</span>)</span></div>
+      <div class="row"><span class="lbl">Add / transform</span><span class="pill"><span class="fn">df.withColumn</span>(<span class="st">"c"</span>, col(<span class="st">"a"</span>) + <span class="nm">1</span>)</span></div>
+      <div class="row"><span class="lbl">Cast type</span><span class="pill">col(<span class="st">"age"</span>).<span class="fn">cast</span>(<span class="st">"integer"</span>)</span></div>
+      <div class="row"><span class="lbl">Conditional col</span><span class="pill"><span class="fn">when</span>(col(<span class="st">"x"</span>)><span class="nm">0</span>,<span class="st">"pos"</span>).<span class="fn">otherwise</span>(<span class="st">"neg"</span>)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head t"><span class="dot dt"></span>Filter &amp; Where</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Simple filter</span><span class="pill"><span class="fn">df.filter</span>(col(<span class="st">"age"</span>) > <span class="nm">18</span>)</span></div>
+      <div class="row"><span class="lbl">String condition</span><span class="pill"><span class="fn">df.where</span>(<span class="st">"age > 18 AND city = 'NYC'"</span>)</span></div>
+      <div class="row"><span class="lbl">AND / OR</span><span class="pill">(col(<span class="st">"a"</span>)><span class="nm">1</span>) &amp; (col(<span class="st">"b"</span>)==<span class="st">"x"</span>)</span></div>
+      <div class="row"><span class="lbl">isin</span><span class="pill">col(<span class="st">"c"</span>).<span class="fn">isin</span>([<span class="st">"a"</span>, <span class="st">"b"</span>, <span class="st">"c"</span>])</span></div>
+      <div class="row"><span class="lbl">Like / contains</span><span class="pill">col(<span class="st">"name"</span>).<span class="fn">like</span>(<span class="st">"%John%"</span>)</span></div>
+      <div class="row"><span class="lbl">startsWith</span><span class="pill">col(<span class="st">"name"</span>).<span class="fn">startswith</span>(<span class="st">"J"</span>)</span></div>
+      <div class="row"><span class="lbl">Null checks</span><span class="pill">col(<span class="st">"x"</span>).<span class="fn">isNull</span>() / .<span class="fn">isNotNull</span>()</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head r"><span class="dot dr"></span>Joins</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Inner join</span><span class="pill"><span class="fn">df1.join</span>(df2, <span class="st">"id"</span>, <span class="st">"inner"</span>)</span></div>
+      <div class="row"><span class="lbl">Left outer</span><span class="pill"><span class="fn">df1.join</span>(df2, <span class="st">"id"</span>, <span class="st">"left"</span>)</span></div>
+      <div class="row"><span class="lbl">Full outer</span><span class="pill"><span class="fn">df1.join</span>(df2, <span class="st">"id"</span>, <span class="st">"outer"</span>)</span></div>
+      <div class="row"><span class="lbl">Multi-key join</span><span class="pill"><span class="fn">df1.join</span>(df2, [<span class="st">"a"</span>,<span class="st">"b"</span>], <span class="st">"inner"</span>)</span></div>
+      <div class="row"><span class="lbl">Broadcast join</span><span class="pill"><span class="fn">df1.join</span>(<span class="fn">broadcast</span>(df2), <span class="st">"id"</span>)</span></div>
+      <div class="row"><span class="lbl">Left anti</span><span class="pill"><span class="fn">df1.join</span>(df2, <span class="st">"id"</span>, <span class="st">"left_anti"</span>)</span></div>
+      <div class="row"><span class="lbl">Semi join</span><span class="pill"><span class="fn">df1.join</span>(df2, <span class="st">"id"</span>, <span class="st">"left_semi"</span>)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head pu"><span class="dot dp"></span>GroupBy &amp; Aggregate</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Count</span><span class="pill">df.<span class="fn">groupBy</span>(<span class="st">"col"</span>).<span class="fn">count</span>()</span></div>
+      <div class="row"><span class="lbl">Sum / avg / min / max</span><span class="pill">.<span class="fn">agg</span>(<span class="fn">sum</span>(<span class="st">"v"</span>), <span class="fn">avg</span>(<span class="st">"v"</span>), <span class="fn">min</span>(<span class="st">"v"</span>))</span></div>
+      <div class="row"><span class="lbl">Alias result</span><span class="pill">.<span class="fn">agg</span>(<span class="fn">sum</span>(<span class="st">"v"</span>).<span class="fn">alias</span>(<span class="st">"total"</span>))</span></div>
+      <div class="row"><span class="lbl">Count distinct</span><span class="pill">.<span class="fn">agg</span>(<span class="fn">countDistinct</span>(<span class="st">"id"</span>))</span></div>
+      <div class="row"><span class="lbl">Collect list / set</span><span class="pill">.<span class="fn">agg</span>(<span class="fn">collect_list</span>(<span class="st">"x"</span>), <span class="fn">collect_set</span>(<span class="st">"x"</span>))</span></div>
+      <div class="row"><span class="lbl">First / last</span><span class="pill">.<span class="fn">agg</span>(<span class="fn">first</span>(<span class="st">"x"</span>), <span class="fn">last</span>(<span class="st">"x"</span>))</span></div>
+      <div class="row"><span class="lbl">Pivot</span><span class="pill">.<span class="fn">groupBy</span>(<span class="st">"a"</span>).<span class="fn">pivot</span>(<span class="st">"b"</span>).<span class="fn">sum</span>(<span class="st">"v"</span>)</span></div>
+    </div>
+  </div>
+
+  <!-- ── ROW 2: 4 cards ── -->
+
+  <div class="card">
+    <div class="card-head o"><span class="dot do"></span>Window Functions</div>
+    <div class="card-body">
+      <div class="blk-lbl">Define window</div>
+      <div class="blk"><span class="kw">from</span> pyspark.sql <span class="kw">import</span> Window
+w = Window.<span class="fn">partitionBy</span>(<span class="st">"dept"</span>).<span class="fn">orderBy</span>(<span class="st">"salary"</span>)</div>
+      <div class="row" style="margin-top:7px;"><span class="lbl">Row number</span><span class="pill"><span class="fn">row_number</span>().<span class="fn">over</span>(w)</span></div>
+      <div class="row"><span class="lbl">Rank / dense rank</span><span class="pill"><span class="fn">rank</span>().<span class="fn">over</span>(w) / <span class="fn">dense_rank</span>().<span class="fn">over</span>(w)</span></div>
+      <div class="row"><span class="lbl">Lag / Lead</span><span class="pill"><span class="fn">lag</span>(<span class="st">"col"</span>,<span class="nm">1</span>).<span class="fn">over</span>(w) / <span class="fn">lead</span>(<span class="st">"col"</span>,<span class="nm">1</span>).<span class="fn">over</span>(w)</span></div>
+      <div class="row"><span class="lbl">Running total</span><span class="pill"><span class="fn">sum</span>(<span class="st">"v"</span>).<span class="fn">over</span>(w.<span class="fn">rowsBetween</span>(-sys.maxsize, <span class="nm">0</span>))</span></div>
+      <div class="row"><span class="lbl">ntile</span><span class="pill"><span class="fn">ntile</span>(<span class="nm">4</span>).<span class="fn">over</span>(w) <span class="cm"># quartiles</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head g"><span class="dot dg"></span>Sort, Dedup &amp; Nulls</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Sort asc / desc</span><span class="pill"><span class="fn">df.orderBy</span>(col(<span class="st">"a"</span>).<span class="fn">desc</span>())</span></div>
+      <div class="row"><span class="lbl">Multi-col sort</span><span class="pill"><span class="fn">df.orderBy</span>(<span class="st">"a"</span>, col(<span class="st">"b"</span>).<span class="fn">desc</span>())</span></div>
+      <div class="row"><span class="lbl">Distinct rows</span><span class="pill"><span class="fn">df.distinct</span>()</span></div>
+      <div class="row"><span class="lbl">Drop duplicates</span><span class="pill"><span class="fn">df.dropDuplicates</span>([<span class="st">"a"</span>, <span class="st">"b"</span>])</span></div>
+      <div class="row"><span class="lbl">Fill nulls</span><span class="pill"><span class="fn">df.fillna</span>({<span class="st">"a"</span>:<span class="nm">0</span>, <span class="st">"b"</span>:<span class="st">"N/A"</span>})</span></div>
+      <div class="row"><span class="lbl">Drop null rows</span><span class="pill"><span class="fn">df.dropna</span>(subset=[<span class="st">"a"</span>, <span class="st">"b"</span>])</span></div>
+      <div class="row"><span class="lbl">Replace values</span><span class="pill"><span class="fn">df.replace</span>(<span class="st">"old"</span>, <span class="st">"new"</span>, <span class="st">"col"</span>)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head y"><span class="dot dy"></span>Partition &amp; Coalesce</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Repartition (shuffle)</span><span class="pill"><span class="fn">df.repartition</span>(<span class="nm">200</span>)</span></div>
+      <div class="row"><span class="lbl">Repartition by col</span><span class="pill"><span class="fn">df.repartition</span>(<span class="nm">50</span>, col(<span class="st">"country"</span>))</span></div>
+      <div class="row"><span class="lbl">Coalesce (no shuffle)</span><span class="pill"><span class="fn">df.coalesce</span>(<span class="nm">10</span>)</span></div>
+      <div class="row"><span class="lbl">Check partitions</span><span class="pill">df.rdd.<span class="fn">getNumPartitions</span>()</span></div>
+      <div class="row"><span class="lbl">Set shuffle parts</span><span class="pill">spark.conf.<span class="fn">set</span>(<span class="st">"spark.sql.shuffle.partitions"</span>,<span class="st">"200"</span>)</span></div>
+      <div class="tip">
+        <div class="tip-lbl">✓ Rule of thumb</div>
+        <span class="hl">repartition</span> to increase/balance · <span class="hl">coalesce</span> to reduce before write · ~128 MB per partition
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head t"><span class="dot dt"></span>Union &amp; Set Ops</div>
+    <div class="card-body">
+      <div class="row"><span class="lbl">Union by position</span><span class="pill"><span class="fn">df1.union</span>(df2)</span></div>
+      <div class="row"><span class="lbl">Union by name</span><span class="pill"><span class="fn">df1.unionByName</span>(df2)</span></div>
+      <div class="row"><span class="lbl">Allow missing cols</span><span class="pill">.<span class="fn">unionByName</span>(df2, allowMissingColumns=<span class="kw">True</span>)</span></div>
+      <div class="row"><span class="lbl">Intersect</span><span class="pill"><span class="fn">df1.intersect</span>(df2)</span></div>
+      <div class="row"><span class="lbl">Subtract</span><span class="pill"><span class="fn">df1.subtract</span>(df2)</span></div>
+    </div>
+  </div>
+
+  <!-- ── ROW 3: Z-Order + Vacuum + Delta Lake (span 2) ── -->
+
+  <div class="card">
+    <div class="card-head pu"><span class="dot dp"></span>Z-Order Optimization</div>
+    <div class="card-body">
+      <div class="blk-lbl">OPTIMIZE + ZORDER</div>
+      <div class="blk">spark.<span class="fn">sql</span>(<span class="st">"""
+  OPTIMIZE delta.`/path/to/table`
+  ZORDER BY (country, event_date)
+"""</span>)</div>
+      <div class="tip">
+        <div class="tip-lbl">✓ When to use</div>
+        High-cardinality cols in <span class="hl">WHERE</span>/<span class="hl">JOIN</span>. 2–4 cols max. Co-locates data → fewer files scanned.
+      </div>
+      <div class="warn">
+        <div class="warn-lbl">⚠ Avoid on</div>
+        Partition cols, boolean/low-cardinality cols, cols never used in filters.
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head g"><span class="dot dg"></span>VACUUM — Storage Cleanup</div>
+    <div class="card-body">
+      <div class="blk-lbl">Run VACUUM</div>
+      <div class="blk"><span class="cm"># Dry run first</span>
+spark.<span class="fn">sql</span>(<span class="st">"VACUUM delta.`/path` DRY RUN"</span>)
+<span class="cm"># Default = 168 h (7 days)</span>
+spark.<span class="fn">sql</span>(<span class="st">"VACUUM delta.`/path/to/table`"</span>)
+<span class="cm"># Custom retention</span>
+spark.<span class="fn">sql</span>(<span class="st">"VACUUM delta.`/path` RETAIN 168 HOURS"</span>)</div>
+      <div class="warn">
+        <div class="warn-lbl">⚠ Caution</div>
+        Never below <span class="hl">168 h</span> — breaks time travel. Never below streaming checkpoint lag.
+      </div>
+    </div>
+  </div>
+
+  <!-- Delta Lake spans 2 cols -->
+  <div class="card span2">
+    <div class="card-head r"><span class="dot dr"></span>Delta Lake — Write, Merge &amp; Time Travel</div>
+    <div class="card-body">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:9px;">
+        <div>
+          <div class="blk-lbl">Write modes</div>
+          <div class="blk"><span class="fn">df.write</span>.<span class="fn">format</span>(<span class="st">"delta"</span>) \
+  .<span class="fn">mode</span>(<span class="st">"overwrite"</span>).<span class="fn">save</span>(path)
+<span class="cm"># overwrite|append|ignore|error</span>
+.<span class="fn">partitionBy</span>(<span class="st">"date"</span>).<span class="fn">save</span>(path)</div>
+        </div>
+        <div>
+          <div class="blk-lbl">Merge / Upsert</div>
+          <div class="blk"><span class="kw">from</span> delta.tables <span class="kw">import</span> DeltaTable
+tgt = DeltaTable.<span class="fn">forPath</span>(spark, path)
+tgt.<span class="fn">alias</span>(<span class="st">"t"</span>).<span class="fn">merge</span>(
+  src.<span class="fn">alias</span>(<span class="st">"s"</span>), <span class="st">"t.id = s.id"</span>) \
+  .<span class="fn">whenMatchedUpdateAll</span>() \
+  .<span class="fn">whenNotMatchedInsertAll</span>() \
+  .<span class="fn">execute</span>()</div>
+        </div>
+        <div>
+          <div class="blk-lbl">Time Travel</div>
+          <div class="blk"><span class="cm"># by version</span>
+spark.<span class="fn">read</span>.<span class="fn">format</span>(<span class="st">"delta"</span>) \
+  .<span class="fn">option</span>(<span class="st">"versionAsOf"</span>, <span class="nm">3</span>) \
+  .<span class="fn">load</span>(path)
+<span class="cm"># by timestamp</span>
+  .<span class="fn">option</span>(<span class="st">"timestampAsOf"</span>,<span class="st">"2024-01-01"</span>)
+tgt.<span class="fn">restoreToVersion</span>(<span class="nm">2</span>)</div>
+        </div>
+        <div>
+          <div class="blk-lbl">History &amp; Schema</div>
+          <div class="blk">tgt.<span class="fn">history</span>().<span class="fn">show</span>() <span class="cm"># audit log</span>
+
+<span class="cm"># merge new columns on write</span>
+.<span class="fn">option</span>(<span class="st">"mergeSchema"</span>, <span class="st">"true"</span>)
+<span class="cm"># force overwrite schema</span>
+.<span class="fn">option</span>(<span class="st">"overwriteSchema"</span>,<span class="st">"true"</span>)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ROW 4: Performance full width ── -->
+  <div class="card span4">
+    <div class="card-head o"><span class="dot do"></span>Performance Patterns &amp; Key Configs</div>
+    <div class="card-body">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px;">
+        <div>
+          <div class="blk-lbl">Broadcast join</div>
+          <div class="blk"><span class="kw">from</span> pyspark.sql.functions <span class="kw">import</span> broadcast
+df1.<span class="fn">join</span>(<span class="fn">broadcast</span>(small_df), <span class="st">"id"</span>)
+<span class="cm"># one side &lt; 10 MB → no shuffle</span></div>
+        </div>
+        <div>
+          <div class="blk-lbl">Cache &amp; Persist</div>
+          <div class="blk">df.<span class="fn">cache</span>()         <span class="cm"># MEMORY_AND_DISK</span>
+df.<span class="fn">persist</span>(StorageLevel.MEMORY_ONLY)
+df.<span class="fn">unpersist</span>()    <span class="cm"># free when done</span></div>
+        </div>
+        <div>
+          <div class="blk-lbl">Common pitfalls</div>
+          <div class="blk"><span class="cm"># ❌ .collect() on large df</span>
+<span class="cm"># ❌ Python UDFs (use built-ins)</span>
+<span class="cm"># ❌ .count() inside loops</span>
+<span class="cm"># ✓  df.limit(100).show()</span>
+<span class="cm"># ✓  df.explain() — check plan</span></div>
+        </div>
+        <div>
+          <div class="blk-lbl">Key Spark Configs</div>
+          <div class="blk">shuffle.partitions         = <span class="nm">200</span>
+autoBroadcastJoinThreshold = <span class="nm">10m</span>
+adaptive.enabled           = <span class="kw">true</span>
+delta.optimizeWrite        = <span class="kw">true</span>
+<span class="cm"># prefix: spark.sql.* / spark.databricks.*</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

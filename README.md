@@ -1,0 +1,2 @@
+# Pyspark Cheat Sheet
+This repository contains a concise PySpark Cheat Sheet in PDF format, designed as a quick reference for working with Apache Spark using Python. It covers essential PySpark concepts, including DataFrame operations, transformations, actions, Spark SQL, and common functions used in data processing workflows. The cheat sheet is intended to help data engineers and data scientists quickly recall syntax and patterns without needing to search through full documentation.
