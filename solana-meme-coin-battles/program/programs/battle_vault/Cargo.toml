@@ -1,0 +1,28 @@
+[package]
+name = "battle_vault"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "battle_vault"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
+anchor-spl = "0.30.1"
+# `pyth-sdk-solana` (the current, non-deprecated Pyth crate) transitively
+# pulls in the post-split `solana-account-info` crate, whose `AccountInfo`
+# type does not match anchor 0.30.1's pinned solana-program 1.18 — see
+# program/README.md for the full explanation. `pyth-client` is the older,
+# now-deprecated crate, but it depends directly on solana-program 1.x like
+# anchor does, and its `Price` account layout is a stable, still-Pod-castable
+# struct — good enough for reading a price on-chain here. A real deployment
+# on a newer anchor/solana-program major version should migrate to Pyth's
+# current pull-oracle SDK (`pyth-solana-receiver-sdk`) instead.
+pyth-client = "0.5.1"
+bytemuck = "1"

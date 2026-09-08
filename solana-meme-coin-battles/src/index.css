@@ -1,0 +1,105 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #05060a;
+  --color-panel: #0d0f18;
+  --color-panel-2: #141726;
+  --color-line: #232840;
+  --color-mist: #8b90ab;
+  --color-fog: #565c7a;
+  --color-brand: #7c5cff;
+  --color-brand-2: #22d3b8;
+  --color-win: #34d399;
+  --color-lose: #fb7185;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(124, 92, 255, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(34, 211, 184, 0.1), transparent 55%),
+    var(--color-ink);
+  color: #e7e8f5;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(124, 92, 255, 0.35);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.card {
+  background: linear-gradient(180deg, var(--color-panel), var(--color-panel-2));
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-primary {
+  background: linear-gradient(90deg, var(--color-brand), #a78bfa);
+  color: white;
+}
+.btn-primary:hover {
+  opacity: 0.92;
+}
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-line);
+  color: #e7e8f5;
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* wallet-adapter modal restyle to match the dark theme */
+.wallet-adapter-button {
+  background: linear-gradient(90deg, var(--color-brand), #a78bfa) !important;
+  border-radius: 0.75rem !important;
+  font-family: var(--font-body) !important;
+  height: auto !important;
+  padding: 0.6rem 1.1rem !important;
+  font-size: 0.9rem !important;
+}
+.wallet-adapter-modal-wrapper {
+  background: var(--color-panel) !important;
+  border: 1px solid var(--color-line);
+}
+.wallet-adapter-modal-title {
+  color: #e7e8f5 !important;
+}
+.wallet-adapter-modal-list li .wallet-adapter-button {
+  background: var(--color-panel-2) !important;
+}

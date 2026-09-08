@@ -1,0 +1,20 @@
+{
+  "name": "battle-vault-keeper",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Reference off-chain keeper that settles ended battle_vault battles on-chain. Requires the program to actually be deployed and its IDL generated — see README.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/web3.js": "^1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
