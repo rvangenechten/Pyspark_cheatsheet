@@ -6,6 +6,7 @@ import { useLocalStorage } from '../lib/storage'
 import { balanceOf, deposit, withdraw, type VaultState } from '../lib/vault'
 import {
   DUEL_PAIRS,
+  STAKE_SIZES_SOL,
   currentRound,
   roundKey,
   emptyPool,
@@ -55,7 +56,7 @@ function DuelCard({
 }) {
   const { connection } = useConnection()
   const walletCtx = useWallet()
-  const [amount, setAmount] = useState('1')
+  const [size, setSize] = useState<number>(STAKE_SIZES_SOL[0])
   const [busy, setBusy] = useState<Side | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,28 +74,26 @@ function DuelCard({
   const myB = stakeOf(pool, 'B', wallet)
 
   async function stake(side: Side) {
-    const amt = Number(amount)
-    if (!amt || amt <= 0) return
     const cap = maxStake(pool, side)
-    if (amt > cap) {
+    if (size > cap) {
       setError(
         cap === 0
           ? 'This side is already ahead — stake the other side to keep it equal.'
-          : `Max ${cap.toFixed(2)} SOL right now to keep both sides equal.`,
+          : `Max ${cap.toFixed(2)} SOL right now to keep both sides equal — try a smaller size.`,
       )
       return
     }
     const solBalance = balanceOf(vault, wallet, 'SOL')
-    if (amt > solBalance) {
+    if (size > solBalance) {
       setError('Not enough SOL in your vault — fund it on the Vault page.')
       return
     }
     setBusy(side)
     setError(null)
     try {
-      await signDemoAction(connection, walletCtx, `duel:stake:${key}:${side}:${amt}`)
-      setVault((v) => withdraw(v, wallet, 'SOL', amt))
-      setPools((ps) => ({ ...ps, [key]: addStake(ps[key] ?? emptyPool(), side, wallet, amt) }))
+      await signDemoAction(connection, walletCtx, `duel:stake:${key}:${side}:${size}`)
+      setVault((v) => withdraw(v, wallet, 'SOL', size))
+      setPools((ps) => ({ ...ps, [key]: addStake(ps[key] ?? emptyPool(), side, wallet, size) }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transaction failed')
     } finally {
@@ -123,6 +122,22 @@ function DuelCard({
         )}
       </div>
 
+      <div className="flex gap-1 justify-center">
+        {STAKE_SIZES_SOL.map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={locked}
+            onClick={() => setSize(s)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono border transition-colors disabled:opacity-40 ${
+              size === s ? 'bg-brand text-white border-brand' : 'border-line text-mist hover:text-white'
+            }`}
+          >
+            {s} SOL
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         {(['A', 'B'] as const).map((side) => {
           const total = side === 'A' ? totalA : totalB
@@ -138,7 +153,7 @@ function DuelCard({
               )}
               <button
                 className="btn btn-ghost w-full text-sm"
-                disabled={locked || busy !== null || cap === 0}
+                disabled={locked || busy !== null || size > cap}
                 onClick={() => stake(side)}
               >
                 {busy === side ? 'Confirm…' : `Pick ${side === 'A' ? coinA.symbol : coinB.symbol}`}
@@ -148,17 +163,6 @@ function DuelCard({
         })}
       </div>
 
-      <div>
-        <input
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          type="number"
-          min="0"
-          step="0.1"
-          disabled={locked}
-          className="w-full bg-white/5 border border-line rounded-lg px-3 py-1.5 text-sm font-mono disabled:opacity-40"
-        />
-      </div>
       <p className="text-xs text-fog">
         Stakes are matched 1:1 — the side that's ahead is capped until the other catches up, so
         both pools stay equal.

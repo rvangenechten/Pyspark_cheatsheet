@@ -14,7 +14,7 @@
  *   1. Poll all Battle accounts on-chain.
  *   2. Filter to ones that have an opponent, aren't settled yet, and whose
  *      `ends_at` has passed.
- *   3. Look up the registered Pyth price feed for each side's mint.
+ *   3. Look up the registered Pyth price feed for each side's backed coin.
  *   4. Call `settle_battle` — permissionless, so this keypair only ever
  *      pays the small tx fee, never anyone's stake.
  *
@@ -114,6 +114,7 @@ async function main() {
         opponent: PublicKey
         mintA: PublicKey
         mintB: PublicKey
+        collateral: { sol?: object; usdc?: object } // Anchor enum encoding: { variantName: {} }
       }
       try {
         const feedA = pda(programId, [Buffer.from('feed'), b.mintA.toBuffer()])
@@ -121,38 +122,23 @@ async function main() {
         const feedConfigA = await accounts.feedConfig.fetch(feedA)
         const feedConfigB = await accounts.feedConfig.fetch(feedB)
 
-        const vaultStateA = pda(programId, [
-          Buffer.from('vault'),
-          b.creator.toBuffer(),
-          b.mintA.toBuffer(),
-        ])
-        const vaultStateB = pda(programId, [
-          Buffer.from('vault'),
-          b.opponent.toBuffer(),
-          b.mintB.toBuffer(),
-        ])
+        // CollateralAsset::Sol = 0, ::Usdc = 1 (see #[repr(u8)] on the enum).
+        const assetByte = Buffer.from([b.collateral.sol !== undefined ? 0 : 1])
+
+        const vaultStateA = pda(programId, [Buffer.from('vault'), b.creator.toBuffer(), assetByte])
+        const vaultStateB = pda(programId, [Buffer.from('vault'), b.opponent.toBuffer(), assetByte])
         const vaultTokenA = pda(programId, [
           Buffer.from('vault-token'),
           b.creator.toBuffer(),
-          b.mintA.toBuffer(),
+          assetByte,
         ])
         const vaultTokenB = pda(programId, [
           Buffer.from('vault-token'),
           b.opponent.toBuffer(),
-          b.mintB.toBuffer(),
+          assetByte,
         ])
-        const escrowA = pda(programId, [
-          Buffer.from('escrow'),
-          b.creator.toBuffer(),
-          Buffer.from('a'),
-          battlePubkey.toBuffer(),
-        ])
-        const escrowB = pda(programId, [
-          Buffer.from('escrow'),
-          b.creator.toBuffer(),
-          Buffer.from('b'),
-          battlePubkey.toBuffer(),
-        ])
+        // One escrow per battle (both sides' collateral), not one per side.
+        const escrow = pda(programId, [Buffer.from('escrow'), b.creator.toBuffer(), battlePubkey.toBuffer()])
 
         const sig = await program.methods
           .settleBattle()
@@ -163,8 +149,7 @@ async function main() {
             vaultTokenA,
             vaultStateB,
             vaultTokenB,
-            escrowA,
-            escrowB,
+            escrow,
             pythPriceA: (feedConfigA as { pythPriceAccount: PublicKey }).pythPriceAccount,
             pythPriceB: (feedConfigB as { pythPriceAccount: PublicKey }).pythPriceAccount,
             tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,

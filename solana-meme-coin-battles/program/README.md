@@ -9,25 +9,41 @@ not a build artifact.
 
 ## What it does
 
-- **Vaults**: `init_vault` + `deposit`/`withdraw` give each `(owner, mint)`
-  pair a PDA-owned SPL token account — "the vault" from the brief.
-- **Challenge battles**: `create_battle` escrows the creator's wager out of
-  their vault and leaves the opponent's coin unset — an open challenge, not
-  a 1:1 pairing the creator dictates. `join_battle` lets **anyone accept
+- **Vaults hold collateral, not the meme coin.** `init_vault` + `deposit`/
+  `withdraw` give each `(owner, asset)` pair a PDA-owned SPL token account,
+  where `asset` is wrapped SOL or USDC — "the vault" from the brief. You
+  never need to hold the coin you're backing.
+- **Challenge battles**: `create_battle` names the coin the creator is
+  backing (`mint_a`, referenced only — never custodied) and escrows their
+  collateral wager, leaving the opponent's coin unset — an open challenge,
+  not a 1:1 pairing the creator dictates. `join_battle` lets **anyone accept
   with any coin that has a registered price feed**, matching the same
-  wager amount, and snapshots both coins' Pyth prices as the reference
+  collateral wager, and snapshots both coins' Pyth prices as the reference
   point. `settle_battle` is **permissionless** — anyone (the keeper,
   normally) can call it once the window ends, and it re-reads Pyth to
-  decide the winner and pay out both escrows. The outcome comes from the
-  price feed, not from whoever calls it.
+  decide the winner and pay the single collateral escrow (now holding both
+  sides' wagers) to the winner's vault. The outcome comes from the price
+  feed, not from whoever calls it.
 - **Price feeds**: `set_price_feed` is admin-gated per mint. A coin without a
-  registered feed simply can't be battled — there's no fallback to a trusted
+  registered feed simply can't be backed — there's no fallback to a trusted
   party's word on who won.
 
 ## Known gaps before this could hold real funds
 
 - **Not built or tested.** No `anchor test` run, no localnet/devnet deploy,
-  no fuzzing. `cargo check` catches type errors, not logic bugs.
+  no fuzzing. `cargo check` catches type errors, not logic bugs — and it
+  didn't: an earlier revision of this file had `vault_token` accounts
+  constrained with `address = vault_state.key()` (checking the token
+  account's address against an unrelated PDA — always false at runtime, so
+  every deposit/withdraw/battle instruction would have failed) and
+  `release_escrow` signing with `battle`'s bump when the escrow's actual
+  SPL authority was `battle` but the seeds used to sign were the escrow's
+  own — a mismatch that only surfaces when a transaction is actually
+  simulated or run. Both were caught by manual review, not by the compiler.
+  That's the whole reason "compiles clean" and "correct" are different
+  claims here, and why `anchor test` against a local validator is
+  non-negotiable before this goes anywhere near real funds — it exercises
+  account constraints and CPI signing that `cargo check` cannot see.
 - **No audit.** Escrow programs are exactly the kind of code that needs one.
 - **Pyth integration uses the deprecated `pyth-client` crate**, not the
   current `pyth-sdk-solana`. Reason: `pyth-sdk-solana` (current releases)
@@ -74,9 +90,12 @@ program/
    `pyth-solana-receiver-sdk` + newer-anchor migration for something closer
    to production.
 4. Write the Anchor test suite (TypeScript, under `program/tests/` — not
-   included yet) exercising the full flow: init → deposit → create → join →
-   settle, plus the failure paths (join after deadline, settle before
-   `ends_at`, double-settle, withdraw more than unlocked balance).
+   included yet) exercising the full flow: `init_vault` → `deposit` →
+   `create_battle` → `join_battle` → `settle_battle`, plus the failure paths
+   (join after deadline, settle before `ends_at`, double-settle, withdraw
+   more than unlocked balance, wrong-collateral-asset vault). This would
+   also be what actually proves the account constraints are correct —
+   see the note above about what manual review already caught.
 5. `anchor build && anchor deploy --provider.cluster devnet`, then update the
    frontend to call the program instead of the memo-transaction simulation
    in `src/lib/tx.ts`.

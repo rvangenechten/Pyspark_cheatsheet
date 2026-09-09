@@ -2,9 +2,9 @@
 
 Battle Solana meme coins head-to-head: whoever's coin performs better over
 a fixed window wins both stakes, checked and paid out automatically. Connect
-Phantom (or any Wallet Standard wallet), drop a famous meme coin in its
-vault, then either challenge a specific coin or pick a side in the always-on
-Common Coins arena and pay with SOL.
+Phantom (or any Wallet Standard wallet), fund SOL or USDC as collateral —
+you never need to hold the coin you're backing — then either back a coin in
+an open challenge or pick a side in the always-on Common Coins arena.
 
 ![Home screen](docs/screenshot-home.png)
 
@@ -35,23 +35,24 @@ the on-chain design, not to hold anyone's money. Specifically:
 - **Famous coins, live prices** — BONK, WIF, POPCAT, MEW, BOME, PNUT,
   FARTCOIN, MOODENG, priced from CoinGecko's public API and refreshed every
   30s.
-- **Vault** — connect a wallet and deposit a coin (or SOL) into your vault
-  before you can stake it anywhere.
-- **Battles** — open challenges: pick your coin from your vault, a wager
+- **Vault** — connect a wallet and fund SOL and/or USDC. That's the whole
+  vault — it's collateral, not the meme coins themselves.
+- **Battles** — open challenges: pick a coin to back, a SOL or USDC wager
   amount, and a mode (5 min / 1 hour / 24 hour), then leave it open. Anyone
-  else can accept with **any verified token of their own choosing** —
-  verification is checked against Jupiter's token list (`token.jup.ag`
-  strict list), searchable by name or by pasting a mint address; an
-  unverified address is refused. The acceptor locks the same numeric amount
-  of their coin; when the clock runs out, whichever coin gained more (%)
-  wins both stakes. Unanswered challenges can be reclaimed after the join
-  window (shown as "starts in X minutes" while it's open, then a short
-  "battle starts in X" once matched).
+  else can accept by backing a **different verified coin of their own
+  choosing** with the same collateral amount — verification is checked
+  against Jupiter's token list (`token.jup.ag` strict list), searchable by
+  name or by pasting a mint address; an unverified address is refused. When
+  the clock runs out, whichever coin gained more (%) wins both stakes — paid
+  in the collateral asset, so nobody ever has to receive a coin they didn't
+  pick. Unanswered challenges can be reclaimed after the join window (shown
+  as "starts in X minutes" while it's open, then a short "battle starts in
+  X" once matched).
 - **Common Coins** — four fixed matchups (BONK vs WIF, POPCAT vs MEW, BOME
   vs PNUT, FARTCOIN vs MOODENG) running continuously in all three modes.
-  Pick a side and stake SOL; the side that's ahead is capped until the other
-  side catches up, so both pools stay equal at every moment — no separate
-  matching step needed.
+  Pick a side and stake a fixed SOL size (0.1 / 0.5 / 1 / 5 SOL); the side
+  that's ahead is capped until the other catches up, so both pools stay
+  equal at every moment — no separate matching step needed.
 - **Chains** — Solana is live (devnet). Robinhood Chain is listed as
   "coming soon": it's a newly announced tokenized-assets L2 without an
   established token ecosystem or price-feed source yet, so it's honestly
@@ -111,14 +112,18 @@ npm run preview    # serve the build locally
   token list once and caches it; `TokenSearchPicker` searches it and accepts
   a pasted mint address only if it's an exact match on that list. Famous
   coins are always selectable even if the list fetch fails, so Battles still
-  works in a degraded state — just without arbitrary custom tokens.
+  works in a degraded state — just without arbitrary coins beyond the
+  curated list.
 - **Battle/round math** lives in `src/lib/battles.ts` and `src/lib/duels.ts`
   as pure functions, independent of React, so the on-chain program's logic
   (see `program/programs/battle_vault/src/lib.rs`) can be checked against
   the same rules.
-- **Meme coins don't exist on devnet** (BONK, WIF, etc. are mainnet-only
-  mints), which is why deposits are demo bookkeeping backed by a signed
-  memo transaction rather than a real SPL transfer — there's no devnet token
-  to actually move. SOL itself is real on devnet, so a production version
-  could make the Common Coins SOL stakes real transfers well before the
-  full token-vault program is deployed.
+- **Collateral, not the coin itself**: the vault only ever holds SOL and
+  USDC (`src/lib/vault.ts`, keyed `'SOL'` / `'USDC'`). Backing a coin in a
+  Battle or picking a side in Common Coins never requires holding that
+  coin — you just need collateral and a live price for it. This also
+  sidesteps a real constraint: meme coins like BONK/WIF only exist on
+  mainnet, so there'd be no way to actually hold them on devnet anyway.
+  Deposits still ask your wallet to sign a real devnet transaction (a memo,
+  not an SPL transfer — see `src/lib/tx.ts`) so the action is genuine and
+  inspectable even though the balance itself is demo bookkeeping.

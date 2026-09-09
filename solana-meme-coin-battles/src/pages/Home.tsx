@@ -14,12 +14,13 @@ export function Home() {
           devnet prototype · pick a fighter
         </span>
         <h1 className="font-display font-bold text-4xl sm:text-5xl tracking-tight mb-4">
-          Battle meme coins.<br />Winner takes the vault.
+          Battle meme coins.<br />Winner takes both stakes.
         </h1>
         <p className="text-mist text-base sm:text-lg mb-8">
-          Connect Phantom or any Solana wallet, drop your favorite meme coin in the vault,
-          and challenge someone else's. Whoever's coin performs better when the clock runs
-          out wins both stakes — checked and paid out automatically.
+          Connect Phantom or any Solana wallet, fund SOL or USDC as collateral, and back a
+          coin's price against someone else's — no need to hold either coin. Whoever's coin
+          performs better when the clock runs out wins both stakes, checked and paid out
+          automatically.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
           <Link to="/vault" className="btn btn-primary">
@@ -58,18 +59,18 @@ export function Home() {
           {[
             {
               step: '1',
-              title: 'Vault your coin',
-              body: 'Connect your wallet and deposit a famous meme coin into its vault. Your balance is yours until a battle settles.',
+              title: 'Fund your vault',
+              body: 'Connect your wallet and deposit SOL or USDC as collateral. That’s it — no need to hold the coins you want to battle.',
             },
             {
               step: '2',
-              title: 'Pick a mode & challenge',
-              body: 'Choose 5 min, 1 hour, or 24 hour battles. Create a challenge, or pick a side in the Common Coins arena and pay in SOL.',
+              title: 'Pick a mode & back a coin',
+              body: 'Choose 5 min, 1 hour, or 24 hour battles. Create a challenge and back any verified coin, or pick a side in the Common Coins arena.',
             },
             {
               step: '3',
               title: 'Auto-settled, no disputes',
-              body: 'When the clock hits zero, price performance decides the winner and the vault pays out automatically — no manual claims.',
+              body: 'When the clock hits zero, price performance decides the winner and your vault is paid automatically — no manual claims.',
             },
           ].map((s) => (
             <div key={s.step} className="card p-5">

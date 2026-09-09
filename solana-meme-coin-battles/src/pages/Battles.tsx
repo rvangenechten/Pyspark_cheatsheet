@@ -10,55 +10,80 @@ import {
   settleBattle,
   pctChange,
   type Battle,
+  type CollateralAsset,
 } from '../lib/battles'
 import { signDemoAction } from '../lib/tx'
 import { fetchTokenPrice, useTokenPrices } from '../lib/tokenPrice'
-import { heldTokens, rememberToken, useCustomTokenRegistry, type TokenRef } from '../lib/tokens'
+import type { TokenRef } from '../lib/tokens'
 import { WalletGate } from '../components/WalletGate'
 import { TokenTag } from '../components/TokenTag'
 import { TokenSearchPicker } from '../components/TokenSearchPicker'
 import { ModePicker } from '../components/ModePicker'
 import { Countdown } from '../components/Countdown'
 
+function CollateralPicker({
+  value,
+  onChange,
+}: {
+  value: CollateralAsset
+  onChange: (a: CollateralAsset) => void
+}) {
+  return (
+    <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-line w-fit">
+      {(['SOL', 'USDC'] as const).map((asset) => (
+        <button
+          key={asset}
+          type="button"
+          onClick={() => onChange(asset)}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            value === asset ? 'bg-brand text-white' : 'text-mist hover:text-white'
+          }`}
+        >
+          {asset}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function CreateBattleForm({
   wallet,
   vault,
   setVault,
-  registry,
   addBattle,
 }: {
   wallet: string
   vault: VaultState
   setVault: (u: VaultState | ((p: VaultState) => VaultState)) => void
-  registry: Record<string, TokenRef>
   addBattle: (b: Battle) => void
 }) {
   const { connection } = useConnection()
   const walletCtx = useWallet()
-  const held = heldTokens(vault, wallet, registry)
-  const [tokenKey, setTokenKey] = useState(held[0]?.token.key ?? '')
+  const [tokenA, setTokenA] = useState<TokenRef | null>(null)
+  const [collateral, setCollateral] = useState<CollateralAsset>('SOL')
   const [mode, setMode] = useState<ModeId>('5min')
-  const [wager, setWager] = useState('10000')
+  const [wager, setWager] = useState('0.5')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const selected = held.find((h) => h.token.key === tokenKey) ?? held[0]
+  const balance = balanceOf(vault, wallet, collateral)
   const wagerNum = Number(wager)
 
   async function submit() {
     setError(null)
-    if (!selected) return setError('Deposit a coin into your vault first')
+    if (!tokenA) return setError('Pick a coin to back')
     if (!wagerNum || wagerNum <= 0) return setError('Enter a wager amount')
-    if (wagerNum > selected.balance) return setError(`Not enough ${selected.token.symbol} in your vault`)
+    if (wagerNum > balance) return setError(`Not enough ${collateral} in your vault`)
     setBusy(true)
     try {
       await signDemoAction(
         connection,
         walletCtx,
-        `battle:create:${selected.token.key}:${mode}:${wagerNum}`,
+        `battle:create:${tokenA.mint}:${collateral}:${mode}:${wagerNum}`,
       )
-      setVault((v) => withdraw(v, wallet, selected.token.key, wagerNum))
-      addBattle(createBattle(selected.token, mode, wagerNum, wallet))
+      setVault((v) => withdraw(v, wallet, collateral, wagerNum))
+      addBattle(createBattle(tokenA, collateral, mode, wagerNum, wallet))
+      setTokenA(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transaction failed')
     } finally {
@@ -66,41 +91,35 @@ function CreateBattleForm({
     }
   }
 
-  if (held.length === 0) {
-    return (
-      <div className="card p-5 text-center text-sm text-mist">
-        Deposit a coin into your vault before you can challenge anyone — visit the Vault page
-        first.
-      </div>
-    )
-  }
-
   return (
     <div className="card p-5 space-y-4">
       <h3 className="font-display font-semibold">Start a challenge</h3>
       <div>
-        <label className="text-xs text-fog block mb-1">Your coin (staked from vault)</label>
-        <select
-          value={selected?.token.key}
-          onChange={(e) => setTokenKey(e.target.value)}
-          className="w-full bg-white/5 border border-line rounded-lg px-3 py-2 text-sm"
-        >
-          {held.map(({ token, balance }) => (
-            <option key={token.key} value={token.key}>
-              {token.symbol} — vault: {balance.toLocaleString()}
-            </option>
-          ))}
-        </select>
+        <label className="text-xs text-fog block mb-1">Coin to back</label>
+        {tokenA ? (
+          <div className="flex items-center justify-between">
+            <TokenTag token={tokenA} size="sm" />
+            <button className="text-xs text-mist underline" onClick={() => setTokenA(null)}>
+              change
+            </button>
+          </div>
+        ) : (
+          <TokenSearchPicker onSelect={setTokenA} placeholder="Search any verified coin" />
+        )}
       </div>
       <div>
-        <label className="text-xs text-fog block mb-1">
-          Wager amount ({selected?.token.symbol})
-        </label>
+        <label className="text-xs text-fog block mb-1">Stake with</label>
+        <CollateralPicker value={collateral} onChange={setCollateral} />
+        <div className="text-xs text-fog mt-1">Vault balance: {balance.toLocaleString()} {collateral}</div>
+      </div>
+      <div>
+        <label className="text-xs text-fog block mb-1">Wager amount ({collateral})</label>
         <input
           value={wager}
           onChange={(e) => setWager(e.target.value)}
           type="number"
           min="0"
+          step="0.01"
           className="w-full bg-white/5 border border-line rounded-lg px-3 py-2 text-sm font-mono"
         />
       </div>
@@ -109,8 +128,9 @@ function CreateBattleForm({
         <ModePicker value={mode} onChange={setMode} />
       </div>
       <p className="text-xs text-mist">
-        Left open for anyone to accept — with any verified token of their choice, staking the
-        same amount. Whoever's coin gains more (%) by the end wins both stakes. Unaccepted
+        No need to hold the coin itself — you're backing its price with {collateral} collateral.
+        Left open for anyone to accept by backing any other verified coin with the same amount of{' '}
+        {collateral}. Whoever's coin gains more (%) by the end wins both stakes. Unaccepted
         challenges expire after {Math.round(modeById(mode).joinWindowMs / 60000)} min.
       </p>
       {error && <p className="text-xs text-lose">{error}</p>}
@@ -127,16 +147,12 @@ function OpenChallengeAccept({
   vault,
   setVault,
   setBattles,
-  registry,
-  setRegistry,
 }: {
   battle: Battle
   wallet: string
   vault: VaultState
   setVault: (u: VaultState | ((p: VaultState) => VaultState)) => void
   setBattles: (u: Battle[] | ((p: Battle[]) => Battle[])) => void
-  registry: Record<string, TokenRef>
-  setRegistry: (u: Record<string, TokenRef> | ((p: Record<string, TokenRef>) => Record<string, TokenRef>)) => void
 }) {
   const { connection } = useConnection()
   const walletCtx = useWallet()
@@ -144,7 +160,7 @@ function OpenChallengeAccept({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const balance = candidate ? balanceOf(vault, wallet, candidate.key) : 0
+  const balance = balanceOf(vault, wallet, battle.collateral)
 
   async function accept() {
     if (!candidate) return
@@ -153,7 +169,7 @@ function OpenChallengeAccept({
       return
     }
     if (battle.wager > balance) {
-      setError(`Not enough ${candidate.symbol} in your vault — deposit it on the Vault page first.`)
+      setError(`Not enough ${battle.collateral} in your vault — fund it on the Vault page first.`)
       return
     }
     setBusy(true)
@@ -169,8 +185,7 @@ function OpenChallengeAccept({
         return
       }
       await signDemoAction(connection, walletCtx, `battle:join:${battle.id}:${candidate.mint}`)
-      setVault((v) => withdraw(v, wallet, candidate.key, battle.wager))
-      rememberToken(registry, setRegistry, candidate)
+      setVault((v) => withdraw(v, wallet, battle.collateral, battle.wager))
       setBattles((bs) =>
         bs.map((b) => (b.id === battle.id ? joinBattle(b, wallet, candidate, priceA, priceB) : b)),
       )
@@ -183,11 +198,15 @@ function OpenChallengeAccept({
 
   return (
     <div className="space-y-2">
+      <div className="text-xs text-fog text-center">
+        Accepting stakes {battle.wager} {battle.collateral} from your vault (balance:{' '}
+        {balance.toLocaleString()})
+      </div>
       {!candidate ? (
         <TokenSearchPicker
           onSelect={setCandidate}
           excludeMint={battle.tokenA.mint}
-          placeholder="Pick your coin to accept with"
+          placeholder="Pick the coin you're backing"
         />
       ) : (
         <div className="flex items-center justify-between">
@@ -197,15 +216,10 @@ function OpenChallengeAccept({
           </button>
         </div>
       )}
-      {candidate && (
-        <div className="text-xs text-fog">
-          Your vault: {balance.toLocaleString()} {candidate.symbol}
-        </div>
-      )}
       {error && <p className="text-xs text-lose">{error}</p>}
       {candidate && (
         <button className="btn btn-primary w-full" disabled={busy} onClick={accept}>
-          {busy ? 'Confirm in wallet…' : `Accept with ${candidate.symbol}`}
+          {busy ? 'Confirm in wallet…' : `Back ${candidate.symbol}`}
         </button>
       )}
     </div>
@@ -218,8 +232,6 @@ function BattleCard({
   vault,
   setVault,
   setBattles,
-  registry,
-  setRegistry,
   prices,
 }: {
   battle: Battle
@@ -227,15 +239,13 @@ function BattleCard({
   vault: VaultState
   setVault: (u: VaultState | ((p: VaultState) => VaultState)) => void
   setBattles: (u: Battle[] | ((p: Battle[]) => Battle[])) => void
-  registry: Record<string, TokenRef>
-  setRegistry: (u: Record<string, TokenRef> | ((p: Record<string, TokenRef>) => Record<string, TokenRef>)) => void
   prices: Record<string, number>
 }) {
   const status = derivedStatus(battle, Date.now())
   const isCreator = battle.sideA.wallet === wallet
 
   function reclaim() {
-    setVault((v) => deposit(v, wallet, battle.tokenA.key, battle.wager))
+    setVault((v) => deposit(v, wallet, battle.collateral, battle.wager))
     setBattles((bs) => bs.filter((b) => b.id !== battle.id))
   }
 
@@ -278,13 +288,13 @@ function BattleCard({
             <div className="text-fog text-xs leading-tight">
               any
               <br />
-              verified token
+              verified coin
             </div>
           )}
         </div>
       </div>
       <div className="text-center text-xs text-mist font-mono">
-        {battle.wager.toLocaleString()} each side
+        {battle.wager} {battle.collateral} each side
       </div>
 
       {status === 'open' && (
@@ -294,7 +304,7 @@ function BattleCard({
           </div>
           {isCreator ? (
             <p className="text-center text-xs text-fog">
-              Waiting for someone to accept with any verified token
+              Waiting for someone to back another coin against you
             </p>
           ) : (
             <OpenChallengeAccept
@@ -303,8 +313,6 @@ function BattleCard({
               vault={vault}
               setVault={setVault}
               setBattles={setBattles}
-              registry={registry}
-              setRegistry={setRegistry}
             />
           )}
         </div>
@@ -322,7 +330,8 @@ function BattleCard({
       {status === 'settled' && battle.winner && battle.tokenB && winnerWallet && (
         <div className="text-center text-sm font-semibold">
           🏆 {battle.winner === 'A' ? battle.tokenA.symbol : battle.tokenB.symbol} wins —{' '}
-          {winnerWallet.slice(0, 4)}…{winnerWallet.slice(-4)} takes both stakes
+          {winnerWallet.slice(0, 4)}…{winnerWallet.slice(-4)} takes{' '}
+          {(battle.wager * 2).toLocaleString()} {battle.collateral}
         </div>
       )}
       {status === 'expired' && <div className="text-center text-sm text-fog">No challenger accepted in time</div>}
@@ -355,11 +364,11 @@ export function Battles() {
   const wallet = publicKey?.toBase58()
   const [vault, setVault] = useLocalStorage<VaultState>('vault', {})
   const [battles, setBattles] = useLocalStorage<Battle[]>('battles', [])
-  const [registry, setRegistry] = useCustomTokenRegistry()
 
   const mints = useMemo(() => {
     const s = new Set<string>()
     for (const b of battles) {
+      if (!b.tokenA) continue
       s.add(b.tokenA.mint)
       if (b.tokenB) s.add(b.tokenB.mint)
     }
@@ -373,6 +382,7 @@ export function Battles() {
     const id = setInterval(() => {
       const now = Date.now()
       for (const battle of battles) {
+        if (!battle.tokenA) continue // stale shape from before the collateral-model change
         if (battle.winner || !battle.endsAt || now < battle.endsAt || !battle.tokenB) continue
         const endA = prices[battle.tokenA.mint]
         const endB = prices[battle.tokenB.mint]
@@ -380,27 +390,23 @@ export function Battles() {
         const settled = settleBattle(battle, endA, endB)
         if (!settled.winner) continue
         const winnerWallet = settled.winner === 'A' ? battle.sideA.wallet : battle.sideB!.wallet
-        setVault((v) => {
-          let next = deposit(v, winnerWallet, battle.tokenA.key, battle.wager)
-          next = deposit(next, winnerWallet, battle.tokenB!.key, battle.wager)
-          return next
-        })
+        setVault((v) => deposit(v, winnerWallet, battle.collateral, battle.wager * 2))
         setBattles((bs) => bs.map((b) => (b.id === battle.id ? settled : b)))
       }
     }, 3000)
     return () => clearInterval(id)
   }, [battles, prices, setBattles, setVault])
 
-  const sorted = [...battles].sort((a, b) => b.createdAt - a.createdAt)
+  const sorted = [...battles].filter((b) => b.tokenA).sort((a, b) => b.createdAt - a.createdAt)
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-6">
       <div>
         <h1 className="font-display font-bold text-2xl mb-1">Battles</h1>
         <p className="text-mist text-sm">
-          Stake a coin from your vault and leave the challenge open. Anyone can accept with any
-          verified token of their choice, staking the same amount — whoever's coin performs
-          best wins both stakes.
+          Back a coin's price with SOL or USDC collateral and leave the challenge open. Anyone
+          can accept by backing a different verified coin with the same amount — whoever's coin
+          performs best wins both stakes. No need to hold either coin.
         </p>
       </div>
       <WalletGate>
@@ -410,7 +416,6 @@ export function Battles() {
               wallet={wallet}
               vault={vault}
               setVault={setVault}
-              registry={registry}
               addBattle={(b) => setBattles((bs) => [b, ...bs])}
             />
             <div className="grid sm:grid-cols-2 gap-4">
@@ -427,8 +432,6 @@ export function Battles() {
                   vault={vault}
                   setVault={setVault}
                   setBattles={setBattles}
-                  registry={registry}
-                  setRegistry={setRegistry}
                   prices={prices}
                 />
               ))}

@@ -42,6 +42,10 @@ export function roundKey(pairId: string, mode: ModeId, roundIndex: number) {
   return `${pairId}:${mode}:${roundIndex}`
 }
 
+// Fixed stake sizes rather than a freeform amount — keeps bet sizes legible
+// at a glance and makes "both sides equal" easy to reason about visually.
+export const STAKE_SIZES_SOL = [0.1, 0.5, 1, 5] as const
+
 export type Side = 'A' | 'B'
 
 export interface RoundPool {

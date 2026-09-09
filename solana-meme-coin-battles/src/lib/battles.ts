@@ -1,6 +1,8 @@
 import { modeById, type ModeId } from './coins'
 import type { TokenRef } from './tokens'
 
+export type CollateralAsset = 'SOL' | 'USDC'
+
 export interface BattleSide {
   wallet: string
 }
@@ -8,10 +10,12 @@ export interface BattleSide {
 export interface Battle {
   id: string
   mode: ModeId
+  /** The coin each side is backing — not held, just bet on. */
   tokenA: TokenRef
   /** Unset until someone accepts — any verified token, chosen by whoever joins. */
   tokenB?: TokenRef
-  wager: number // equal stake, in each token's own units, on both sides
+  collateral: CollateralAsset
+  wager: number // equal collateral stake, in `collateral` units, on both sides
   sideA: BattleSide
   sideB?: BattleSide
   createdAt: number
@@ -44,6 +48,7 @@ export function derivedStatus(battle: Battle, now: number): DerivedStatus {
 
 export function createBattle(
   tokenA: TokenRef,
+  collateral: CollateralAsset,
   mode: ModeId,
   wager: number,
   wallet: string,
@@ -54,6 +59,7 @@ export function createBattle(
     id: crypto.randomUUID(),
     mode,
     tokenA,
+    collateral,
     wager,
     sideA: { wallet },
     createdAt: now,
@@ -61,7 +67,7 @@ export function createBattle(
   }
 }
 
-/** Any verified token can accept — `tokenB` is the joiner's own choice, not the creator's. */
+/** Any verified token can be backed — `tokenB` is the joiner's own choice. */
 export function joinBattle(
   battle: Battle,
   wallet: string,
