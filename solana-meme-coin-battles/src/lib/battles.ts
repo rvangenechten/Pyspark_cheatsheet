@@ -1,16 +1,17 @@
 import { modeById, type ModeId } from './coins'
+import type { TokenRef } from './tokens'
 
 export interface BattleSide {
   wallet: string
-  signature?: string
 }
 
 export interface Battle {
   id: string
   mode: ModeId
-  coinA: string
-  coinB: string
-  wager: number // equal stake, in the coin's own units, on both sides
+  tokenA: TokenRef
+  /** Unset until someone accepts — any verified token, chosen by whoever joins. */
+  tokenB?: TokenRef
+  wager: number // equal stake, in each token's own units, on both sides
   sideA: BattleSide
   sideB?: BattleSide
   createdAt: number
@@ -42,8 +43,7 @@ export function derivedStatus(battle: Battle, now: number): DerivedStatus {
 }
 
 export function createBattle(
-  coinA: string,
-  coinB: string,
+  tokenA: TokenRef,
   mode: ModeId,
   wager: number,
   wallet: string,
@@ -53,8 +53,7 @@ export function createBattle(
   return {
     id: crypto.randomUUID(),
     mode,
-    coinA,
-    coinB,
+    tokenA,
     wager,
     sideA: { wallet },
     createdAt: now,
@@ -62,9 +61,11 @@ export function createBattle(
   }
 }
 
+/** Any verified token can accept — `tokenB` is the joiner's own choice, not the creator's. */
 export function joinBattle(
   battle: Battle,
   wallet: string,
+  tokenB: TokenRef,
   startPriceA: number,
   startPriceB: number,
 ): Battle {
@@ -73,6 +74,7 @@ export function joinBattle(
   const startsAt = now + PREP_WINDOW_MS
   return {
     ...battle,
+    tokenB,
     sideB: { wallet },
     startsAt,
     endsAt: startsAt + m.durationMs,

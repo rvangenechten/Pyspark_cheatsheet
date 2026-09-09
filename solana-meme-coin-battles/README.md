@@ -37,12 +37,16 @@ the on-chain design, not to hold anyone's money. Specifically:
   30s.
 - **Vault** — connect a wallet and deposit a coin (or SOL) into your vault
   before you can stake it anywhere.
-- **Battles** — challenge a specific opponent coin: pick your coin, their
-  coin, a wager amount, and a mode (5 min / 1 hour / 24 hour). Whoever
-  accepts locks the same amount of their coin; when the clock runs out,
-  whichever coin gained more (%) wins both stakes. Unanswered challenges can
-  be reclaimed after the join window (shown as "starts in X minutes" while
-  it's open, then a short "battle starts in X" once matched).
+- **Battles** — open challenges: pick your coin from your vault, a wager
+  amount, and a mode (5 min / 1 hour / 24 hour), then leave it open. Anyone
+  else can accept with **any verified token of their own choosing** —
+  verification is checked against Jupiter's token list (`token.jup.ag`
+  strict list), searchable by name or by pasting a mint address; an
+  unverified address is refused. The acceptor locks the same numeric amount
+  of their coin; when the clock runs out, whichever coin gained more (%)
+  wins both stakes. Unanswered challenges can be reclaimed after the join
+  window (shown as "starts in X minutes" while it's open, then a short
+  "battle starts in X" once matched).
 - **Common Coins** — four fixed matchups (BONK vs WIF, POPCAT vs MEW, BOME
   vs PNUT, FARTCOIN vs MOODENG) running continuously in all three modes.
   Pick a side and stake SOL; the side that's ahead is capped until the other
@@ -93,9 +97,21 @@ npm run preview    # serve the build locally
 
 ## Design notes worth knowing
 
-- **Prices** come from CoinGecko's public API client-side; it's rate-limited
-  and occasionally unavailable, so there's a static fallback price table
-  (`src/lib/prices.ts`) to keep the UI populated.
+- **Prices** come from CoinGecko's public API client-side for the famous
+  coins (`src/lib/prices.ts`, with a static fallback table since the free
+  tier is rate-limited and occasionally unavailable) and from Jupiter's
+  price API (`src/lib/tokenPrice.ts`) for Battles, since a battle can
+  involve any verified token, not just the curated list. Both fetches can
+  fail in restricted network environments (this app was built in a sandbox
+  that blocked both APIs outright) — they're written to degrade to "price
+  unknown" / the fallback table rather than crash, but that also means live
+  pricing hasn't been observed working end-to-end from inside that sandbox;
+  it should work normally from a regular browser.
+- **Verified tokens**: `src/lib/verifiedTokens.ts` fetches Jupiter's strict
+  token list once and caches it; `TokenSearchPicker` searches it and accepts
+  a pasted mint address only if it's an exact match on that list. Famous
+  coins are always selectable even if the list fetch fails, so Battles still
+  works in a degraded state — just without arbitrary custom tokens.
 - **Battle/round math** lives in `src/lib/battles.ts` and `src/lib/duels.ts`
   as pure functions, independent of React, so the on-chain program's logic
   (see `program/programs/battle_vault/src/lib.rs`) can be checked against

@@ -12,11 +12,14 @@ not a build artifact.
 - **Vaults**: `init_vault` + `deposit`/`withdraw` give each `(owner, mint)`
   pair a PDA-owned SPL token account — "the vault" from the brief.
 - **Challenge battles**: `create_battle` escrows the creator's wager out of
-  their vault; `join_battle` matches it in the opponent's coin and snapshots
-  both coins' Pyth prices as the reference point; `settle_battle` is
-  **permissionless** — anyone (the keeper, normally) can call it once the
-  window ends, and it re-reads Pyth to decide the winner and pay out both
-  escrows. The outcome comes from the price feed, not from whoever calls it.
+  their vault and leaves the opponent's coin unset — an open challenge, not
+  a 1:1 pairing the creator dictates. `join_battle` lets **anyone accept
+  with any coin that has a registered price feed**, matching the same
+  wager amount, and snapshots both coins' Pyth prices as the reference
+  point. `settle_battle` is **permissionless** — anyone (the keeper,
+  normally) can call it once the window ends, and it re-reads Pyth to
+  decide the winner and pay out both escrows. The outcome comes from the
+  price feed, not from whoever calls it.
 - **Price feeds**: `set_price_feed` is admin-gated per mint. A coin without a
   registered feed simply can't be battled — there's no fallback to a trusted
   party's word on who won.

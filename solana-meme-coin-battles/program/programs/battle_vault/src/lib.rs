@@ -10,8 +10,10 @@
 //! - Each (owner, mint) pair gets a PDA vault token account. Users deposit
 //!   SPL tokens into it ahead of time; that's "the vault" from the brief.
 //! - `create_battle` escrows the creator's wager out of their vault into a
-//!   battle-owned escrow account; `join_battle` does the same for the
-//!   opponent and snapshots both coins' Pyth prices as the reference point.
+//!   battle-owned escrow account and leaves the opponent's coin unset — it's
+//!   an open challenge. `join_battle` lets anyone accept with *any* coin
+//!   that has a registered price feed, matching the same wager amount, and
+//!   snapshots both coins' Pyth prices as the reference point.
 //! - `settle_battle` is permissionless (anyone — typically the keeper in
 //!   /keeper — can call it once the window ends) and re-reads Pyth prices
 //!   to decide the winner, then moves both escrows into the winner's vault.
@@ -151,7 +153,9 @@ pub mod battle_vault {
     }
 
     /// Locks `wager` of the creator's `mint_a` vault balance into a fresh
-    /// battle escrow and opens it for an opponent to accept.
+    /// battle escrow and opens it for anyone to accept — with *any* verified
+    /// coin of their own choosing. The opponent's mint isn't decided here;
+    /// see `join_battle`.
     pub fn create_battle(
         ctx: Context<CreateBattle>,
         _nonce: u64,
@@ -159,11 +163,6 @@ pub mod battle_vault {
         wager: u64,
     ) -> Result<()> {
         require!(wager > 0, BattleError::ZeroAmount);
-        require_keys_neq!(
-            ctx.accounts.mint_a.key(),
-            ctx.accounts.mint_b.key(),
-            BattleError::SameCoinBothSides
-        );
 
         let now = Clock::get()?.unix_timestamp;
 
@@ -171,7 +170,8 @@ pub mod battle_vault {
         battle.creator = ctx.accounts.creator.key();
         battle.opponent = None;
         battle.mint_a = ctx.accounts.mint_a.key();
-        battle.mint_b = ctx.accounts.mint_b.key();
+        // Set for real in `join_battle`, once the opponent picks their coin.
+        battle.mint_b = Pubkey::default();
         battle.wager = wager;
         battle.mode = mode;
         battle.join_deadline = now + mode.join_window_secs();
@@ -211,6 +211,11 @@ pub mod battle_vault {
             let battle = &ctx.accounts.battle;
             require!(battle.opponent.is_none(), BattleError::AlreadyJoined);
             require!(now <= battle.join_deadline, BattleError::JoinWindowExpired);
+            require_keys_neq!(
+                battle.mint_a,
+                ctx.accounts.mint_b.key(),
+                BattleError::SameCoinBothSides
+            );
         }
 
         let price_a = read_price(&ctx.accounts.pyth_price_a, clock.slot)?;
@@ -234,6 +239,7 @@ pub mod battle_vault {
         const PREP_WINDOW_SECS: i64 = 60;
         let battle = &mut ctx.accounts.battle;
         battle.opponent = Some(ctx.accounts.opponent.key());
+        battle.mint_b = ctx.accounts.mint_b.key();
         battle.starts_at = now + PREP_WINDOW_SECS;
         battle.ends_at = battle.starts_at + battle.mode.duration_secs();
         battle.start_price_a = price_a;
@@ -570,7 +576,6 @@ pub struct CreateBattle<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
     pub mint_a: Account<'info, Mint>,
-    pub mint_b: Account<'info, Mint>,
     #[account(mut, has_one = owner @ BattleError::NotVaultOwner)]
     pub vault_state_a: Account<'info, VaultState>,
     #[account(mut)]
@@ -604,9 +609,12 @@ pub struct JoinBattle<'info> {
     pub opponent: Signer<'info>,
     #[account(mut)]
     pub battle: Account<'info, Battle>,
-    #[account(constraint = mint_b.key() == battle.mint_b @ BattleError::WrongMint)]
+    /// The opponent's own choice of coin — not fixed by the creator. The
+    /// client is responsible for only offering mints that are actually on
+    /// the verified token registry (`FeedConfig` must exist for it, checked
+    /// implicitly: settlement can't happen without a registered price feed).
     pub mint_b: Account<'info, Mint>,
-    #[account(mut, has_one = owner @ BattleError::NotVaultOwner, constraint = vault_state_b.mint == battle.mint_b)]
+    #[account(mut, has_one = owner @ BattleError::NotVaultOwner, constraint = vault_state_b.mint == mint_b.key() @ BattleError::WrongMint)]
     pub vault_state_b: Account<'info, VaultState>,
     #[account(mut)]
     pub vault_token_b: Account<'info, TokenAccount>,

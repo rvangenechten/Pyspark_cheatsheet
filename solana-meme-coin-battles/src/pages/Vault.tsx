@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { FAMOUS_COINS } from '../lib/coins'
 import { usePrices, priceFor } from '../lib/prices'
+import { useTokenPrices } from '../lib/tokenPrice'
 import { useLocalStorage } from '../lib/storage'
 import { balanceOf, deposit, withdraw, type VaultState } from '../lib/vault'
 import { signDemoAction, explorerUrl } from '../lib/tx'
+import { rememberToken, tokenRefFromCoin, useCustomTokenRegistry, type TokenRef } from '../lib/tokens'
 import { WalletGate } from '../components/WalletGate'
-import { CoinTag } from '../components/CoinTag'
+import { TokenTag } from '../components/TokenTag'
+import { TokenSearchPicker } from '../components/TokenSearchPicker'
 
 function SolFundCard({
   wallet,
@@ -95,26 +98,26 @@ function SolFundCard({
   )
 }
 
-function CoinVaultRow({
-  coinId,
+function TokenVaultRow({
+  token,
   wallet,
   vault,
   setVault,
+  usdPrice,
 }: {
-  coinId: string
+  token: TokenRef
   wallet: string
   vault: VaultState
   setVault: (u: VaultState | ((p: VaultState) => VaultState)) => void
+  usdPrice?: number
 }) {
-  const coin = FAMOUS_COINS.find((c) => c.id === coinId)!
   const { connection } = useConnection()
   const walletCtx = useWallet()
-  const { prices } = usePrices()
   const [amount, setAmount] = useState('10000')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const balance = balanceOf(vault, wallet, coinId)
-  const usd = priceFor(prices, coin.coingeckoId) * balance
+  const balance = balanceOf(vault, wallet, token.key)
+  const usd = usdPrice !== undefined ? usdPrice * balance : undefined
 
   async function doDeposit() {
     const amt = Number(amount)
@@ -122,8 +125,8 @@ function CoinVaultRow({
     setBusy(true)
     setError(null)
     try {
-      await signDemoAction(connection, walletCtx, `vault:deposit:${coinId}:${amt}`)
-      setVault((v) => deposit(v, wallet, coinId, amt))
+      await signDemoAction(connection, walletCtx, `vault:deposit:${token.key}:${amt}`)
+      setVault((v) => deposit(v, wallet, token.key, amt))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transaction failed')
     } finally {
@@ -136,8 +139,8 @@ function CoinVaultRow({
     setBusy(true)
     setError(null)
     try {
-      await signDemoAction(connection, walletCtx, `vault:withdraw:${coinId}:${balance}`)
-      setVault((v) => withdraw(v, wallet, coinId, balance))
+      await signDemoAction(connection, walletCtx, `vault:withdraw:${token.key}:${balance}`)
+      setVault((v) => withdraw(v, wallet, token.key, balance))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transaction failed')
     } finally {
@@ -148,10 +151,10 @@ function CoinVaultRow({
   return (
     <div className="card p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <CoinTag coin={coin} />
+        <TokenTag token={token} />
         <div className="text-right">
           <div className="font-mono">{balance.toLocaleString()}</div>
-          <div className="text-xs text-fog">≈ ${usd.toFixed(2)}</div>
+          <div className="text-xs text-fog">{usd !== undefined ? `≈ $${usd.toFixed(2)}` : 'price unknown'}</div>
         </div>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
@@ -178,10 +181,58 @@ function CoinVaultRow({
   )
 }
 
+function CustomTokenRow({
+  token,
+  wallet,
+  vault,
+  setVault,
+}: {
+  token: TokenRef
+  wallet: string
+  vault: VaultState
+  setVault: (u: VaultState | ((p: VaultState) => VaultState)) => void
+}) {
+  const prices = useTokenPrices([token.mint])
+  return (
+    <TokenVaultRow token={token} wallet={wallet} vault={vault} setVault={setVault} usdPrice={prices[token.mint]} />
+  )
+}
+
+function AddCustomToken({
+  registry,
+  setRegistry,
+}: {
+  registry: Record<string, TokenRef>
+  setRegistry: (u: Record<string, TokenRef> | ((p: Record<string, TokenRef>) => Record<string, TokenRef>)) => void
+}) {
+  const famousMints = new Set(FAMOUS_COINS.map((c) => c.mint))
+
+  function add(token: TokenRef) {
+    if (famousMints.has(token.mint)) return // already listed above, nothing to add
+    rememberToken(registry, setRegistry, token)
+  }
+
+  return (
+    <div className="card p-5 space-y-3">
+      <div>
+        <div className="font-semibold">Add a custom token</div>
+        <div className="text-xs text-mist">
+          Any token on the verified token list can be added — search by name, or paste its mint
+          address.
+        </div>
+      </div>
+      <TokenSearchPicker onSelect={add} />
+    </div>
+  )
+}
+
 export function Vault() {
   const { publicKey } = useWallet()
   const [vault, setVault] = useLocalStorage<VaultState>('vault', {})
+  const [registry, setRegistry] = useCustomTokenRegistry()
+  const { prices } = usePrices()
   const wallet = publicKey?.toBase58()
+  const customTokens = Object.values(registry)
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 space-y-6">
@@ -195,18 +246,39 @@ export function Vault() {
       </div>
       <WalletGate>
         {wallet && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <SolFundCard wallet={wallet} vault={vault} setVault={setVault} />
             <div className="grid sm:grid-cols-2 gap-3">
               {FAMOUS_COINS.map((coin) => (
-                <CoinVaultRow
+                <TokenVaultRow
                   key={coin.id}
-                  coinId={coin.id}
+                  token={tokenRefFromCoin(coin)}
                   wallet={wallet}
                   vault={vault}
                   setVault={setVault}
+                  usdPrice={priceFor(prices, coin.coingeckoId)}
                 />
               ))}
+            </div>
+
+            <div>
+              <h2 className="font-display font-semibold text-lg mb-3">Custom tokens</h2>
+              <div className="space-y-3">
+                <AddCustomToken registry={registry} setRegistry={setRegistry} />
+                {customTokens.length > 0 && (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {customTokens.map((token) => (
+                      <CustomTokenRow
+                        key={token.key}
+                        token={token}
+                        wallet={wallet}
+                        vault={vault}
+                        setVault={setVault}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
