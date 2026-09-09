@@ -17,7 +17,7 @@ export function Header() {
           <NavLink to="/" className="flex items-center gap-2 shrink-0">
             <span className="text-xl">⚔️</span>
             <span className="font-display font-bold text-lg tracking-tight">
-              Meme Coin Battles
+              Degen Duels
             </span>
           </NavLink>
           <nav className="hidden md:flex items-center gap-1">

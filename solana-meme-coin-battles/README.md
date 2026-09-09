@@ -1,4 +1,4 @@
-# Meme Coin Battles
+# Degen Duels (DD)
 
 Battle Solana meme coins head-to-head: whoever's coin performs better over
 a fixed window wins both stakes, checked and paid out automatically. Connect
