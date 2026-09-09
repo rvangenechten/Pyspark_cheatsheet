@@ -7,73 +7,121 @@ export interface VerifiedTokenEntry {
   logoURI?: string
 }
 
-// Jupiter's "strict" list: the community-curated set of tokens Jupiter's own
-// swap UI treats as verified. It's the closest thing Solana has to a
-// standard verification signal for an arbitrary token, so it's what gates
-// "any random token" battles here — a token not on this list can't be used.
-const STRICT_LIST_URL = 'https://token.jup.ag/strict'
+// Jupiter's Token API v2 — ranked/curated endpoints, not just a flat
+// "is this verified" list. `toporganicscore` ranks by Jupiter's own
+// bot-resistant quality score (a reasonable proxy for "top by legitimate
+// size/activity"); `toptrending` is newly-hot tokens over the window.
+// Both only return tokens Jupiter itself treats as tradeable/verified.
+const API_BASE = 'https://lite-api.jup.ag/tokens/v2'
+const TOP_LIMIT = 1000
+const TRENDING_LIMIT = 100
+const TOP_REFRESH_MS = 5 * 60 * 1000
+const TRENDING_REFRESH_MS = 2 * 60 * 1000
 
-let cache: VerifiedTokenEntry[] | null = null
-let inFlight: Promise<VerifiedTokenEntry[]> | null = null
-
-async function fetchList(): Promise<VerifiedTokenEntry[]> {
-  if (cache) return cache
-  if (!inFlight) {
-    inFlight = fetch(STRICT_LIST_URL)
-      .then((res) => {
-        if (!res.ok) throw new Error(`status ${res.status}`)
-        return res.json()
-      })
-      .then((data: VerifiedTokenEntry[]) => {
-        cache = data
-        return data
-      })
-      .catch((err) => {
-        inFlight = null
-        throw err
-      })
+// Shape returned by Jupiter's v2 endpoints has shifted before, so this
+// normalizer accepts a few plausible field-name variants rather than
+// assuming one exact shape — an entry only survives if it at least has a
+// usable address, symbol, and name.
+function normalize(raw: unknown): VerifiedTokenEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const address = r.id ?? r.address ?? r.mint
+  const symbol = r.symbol
+  const name = r.name
+  const logoURI = r.icon ?? r.logoURI ?? r.image
+  if (typeof address !== 'string' || typeof symbol !== 'string' || typeof name !== 'string') {
+    return null
   }
-  return inFlight
+  return { address, symbol, name, logoURI: typeof logoURI === 'string' ? logoURI : undefined }
 }
+
+async function fetchRanked(path: string, limit: number): Promise<VerifiedTokenEntry[]> {
+  const res = await fetch(`${API_BASE}${path}?limit=${limit}`)
+  if (!res.ok) throw new Error(`status ${res.status}`)
+  const data = await res.json()
+  const list = Array.isArray(data) ? data : (data.tokens ?? data.data ?? [])
+  const entries = list.map(normalize).filter((t: VerifiedTokenEntry | null): t is VerifiedTokenEntry => t !== null)
+  if (entries.length === 0) throw new Error('empty or unrecognized response')
+  return entries
+}
+
+interface Cache {
+  entries: VerifiedTokenEntry[]
+  fetchedAt: number
+}
+
+let topCache: Cache | null = null
+let trendingCache: Cache | null = null
 
 export type ListStatus = 'loading' | 'ready' | 'error'
 
-export function useVerifiedTokenList() {
-  const [tokens, setTokens] = useState<VerifiedTokenEntry[]>(cache ?? [])
-  const [status, setStatus] = useState<ListStatus>(cache ? 'ready' : 'loading')
+function useRankedList(
+  cacheRef: { current: Cache | null },
+  fetcher: () => Promise<VerifiedTokenEntry[]>,
+  refreshMs: number,
+) {
+  const [tokens, setTokens] = useState<VerifiedTokenEntry[]>(cacheRef.current?.entries ?? [])
+  const [status, setStatus] = useState<ListStatus>(cacheRef.current ? 'ready' : 'loading')
 
   useEffect(() => {
-    if (cache) {
-      setTokens(cache)
+    const fresh = cacheRef.current && Date.now() - cacheRef.current.fetchedAt < refreshMs
+    if (fresh) {
+      setTokens(cacheRef.current!.entries)
       setStatus('ready')
       return
     }
     let cancelled = false
-    fetchList()
-      .then((list) => {
+    setStatus(cacheRef.current ? 'ready' : 'loading') // keep showing stale data while refreshing
+    fetcher()
+      .then((entries) => {
+        cacheRef.current = { entries, fetchedAt: Date.now() }
         if (!cancelled) {
-          setTokens(list)
+          setTokens(entries)
           setStatus('ready')
         }
       })
       .catch(() => {
-        if (!cancelled) setStatus('error')
+        if (!cancelled && !cacheRef.current) setStatus('error')
       })
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { tokens, status }
 }
 
-export function searchVerified(
-  list: VerifiedTokenEntry[],
-  query: string,
-  limit = 8,
-): VerifiedTokenEntry[] {
+// Module-level boxes so the cache survives component unmount/remount
+// (matches the pattern in lib/prices.ts and lib/tokenPrice.ts).
+const topBox = {
+  get current() {
+    return topCache
+  },
+  set current(v: Cache | null) {
+    topCache = v
+  },
+}
+const trendingBox = {
+  get current() {
+    return trendingCache
+  },
+  set current(v: Cache | null) {
+    trendingCache = v
+  },
+}
+
+export function useTopTokens() {
+  return useRankedList(topBox, () => fetchRanked('/toporganicscore/24h', TOP_LIMIT), TOP_REFRESH_MS)
+}
+
+export function useTrendingTokens() {
+  return useRankedList(trendingBox, () => fetchRanked('/toptrending/1h', TRENDING_LIMIT), TRENDING_REFRESH_MS)
+}
+
+export function searchWithin(list: VerifiedTokenEntry[], query: string, limit = 20): VerifiedTokenEntry[] {
   const q = query.trim().toLowerCase()
-  if (!q) return []
+  if (!q) return list.slice(0, limit)
   const exact: VerifiedTokenEntry[] = []
   const prefix: VerifiedTokenEntry[] = []
   const contains: VerifiedTokenEntry[] = []
@@ -82,21 +130,8 @@ export function searchVerified(
     const name = t.name.toLowerCase()
     if (sym === q) exact.push(t)
     else if (sym.startsWith(q) || name.startsWith(q)) prefix.push(t)
-    else if (sym.includes(q) || name.includes(q)) contains.push(t)
+    else if (sym.includes(q) || name.includes(q) || t.address.toLowerCase().includes(q)) contains.push(t)
     if (exact.length + prefix.length >= limit) break
   }
   return [...exact, ...prefix, ...contains].slice(0, limit)
-}
-
-export function findVerifiedByMint(
-  list: VerifiedTokenEntry[],
-  mint: string,
-): VerifiedTokenEntry | undefined {
-  return list.find((t) => t.address === mint)
-}
-
-// Base58 alphabet, Solana address lengths — good enough to tell "looks like
-// an address" from "still typing a symbol" without being a full validator.
-export function looksLikeMintAddress(s: string): boolean {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s.trim())
 }

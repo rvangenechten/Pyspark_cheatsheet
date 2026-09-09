@@ -39,15 +39,16 @@ the on-chain design, not to hold anyone's money. Specifically:
   vault — it's collateral, not the meme coins themselves.
 - **Battles** — open challenges: pick a coin to back, a SOL or USDC wager
   amount, and a mode (5 min / 1 hour / 24 hour), then leave it open. Anyone
-  else can accept by backing a **different verified coin of their own
-  choosing** with the same collateral amount — verification is checked
-  against Jupiter's token list (`token.jup.ag` strict list), searchable by
-  name or by pasting a mint address; an unverified address is refused. When
-  the clock runs out, whichever coin gained more (%) wins both stakes — paid
-  in the collateral asset, so nobody ever has to receive a coin they didn't
-  pick. Unanswered challenges can be reclaimed after the join window (shown
-  as "starts in X minutes" while it's open, then a short "battle starts in
-  X" once matched).
+  else can accept by backing a **different coin of their own choosing** —
+  picked from a curated list, not typed freely: a "Top 1000" tab (Jupiter's
+  top verified tokens by organic/quality score) and a "🔥 Hot" tab (tokens
+  trending in the last hour), each row showing the coin's logo, name,
+  symbol, and its real mint address so lookalike tickers can't be confused
+  for the genuine coin. When the clock runs out, whichever coin gained more
+  (%) wins both stakes — paid in the collateral asset, so nobody ever has to
+  receive a coin they didn't pick. Unanswered challenges can be reclaimed
+  after the join window (shown as "starts in X minutes" while it's open,
+  then a short "battle starts in X" once matched).
 - **Common Coins** — four fixed matchups (BONK vs WIF, POPCAT vs MEW, BOME
   vs PNUT, FARTCOIN vs MOODENG) running continuously in all three modes.
   Pick a side and stake a fixed SOL size (0.1 / 0.5 / 1 / 5 SOL); the side
@@ -102,18 +103,28 @@ npm run preview    # serve the build locally
   coins (`src/lib/prices.ts`, with a static fallback table since the free
   tier is rate-limited and occasionally unavailable) and from Jupiter's
   price API (`src/lib/tokenPrice.ts`) for Battles, since a battle can
-  involve any verified token, not just the curated list. Both fetches can
-  fail in restricted network environments (this app was built in a sandbox
-  that blocked both APIs outright) — they're written to degrade to "price
-  unknown" / the fallback table rather than crash, but that also means live
-  pricing hasn't been observed working end-to-end from inside that sandbox;
-  it should work normally from a regular browser.
-- **Verified tokens**: `src/lib/verifiedTokens.ts` fetches Jupiter's strict
-  token list once and caches it; `TokenSearchPicker` searches it and accepts
-  a pasted mint address only if it's an exact match on that list. Famous
-  coins are always selectable even if the list fetch fails, so Battles still
-  works in a degraded state — just without arbitrary coins beyond the
-  curated list.
+  involve any coin from the Top 1000 / Hot lists, not just the 8 famous
+  ones. Both fetches can fail in restricted network environments (this app
+  was built in a sandbox that blocked both APIs outright) — they're written
+  to degrade to "price unknown" / the fallback table rather than crash, but
+  that also means live pricing hasn't been observed working end-to-end from
+  inside that sandbox; it should work normally from a regular browser.
+- **Curated token picker**: `src/lib/verifiedTokens.ts` fetches Jupiter's
+  Token API v2 ranked endpoints — top-1000-by-organic-score and
+  top-trending-1h — rather than a flat "is this verified" list, and caches
+  each for a few minutes. `TokenSearchPicker` only ever lets you pick from
+  whichever of those two lists is showing, filtered by what you type; there
+  is deliberately no "paste any mint address" escape hatch, so a challenge
+  can't be created against something obscure or freshly deployed with a
+  copycat symbol. Famous coins are always selectable even if both fetches
+  fail, so Battles still works in a degraded state. One caveat: this app
+  was built somewhere that couldn't reach `lite-api.jup.ag` at all (see
+  above), so the exact response shape of those v2 endpoints was never
+  observed live — `normalize()` in `verifiedTokens.ts` accepts a few
+  plausible field-name variants defensively, but if Jupiter's actual shape
+  differs enough, the picker would silently fall back to famous coins
+  rather than error. Worth confirming against a live response before
+  relying on it.
 - **Battle/round math** lives in `src/lib/battles.ts` and `src/lib/duels.ts`
   as pure functions, independent of React, so the on-chain program's logic
   (see `program/programs/battle_vault/src/lib.rs`) can be checked against

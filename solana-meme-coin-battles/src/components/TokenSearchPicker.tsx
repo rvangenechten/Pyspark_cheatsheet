@@ -1,122 +1,106 @@
 import { useMemo, useState } from 'react'
 import {
-  findVerifiedByMint,
-  looksLikeMintAddress,
-  searchVerified,
-  useVerifiedTokenList,
+  searchWithin,
+  useTopTokens,
+  useTrendingTokens,
+  type VerifiedTokenEntry,
 } from '../lib/verifiedTokens'
 import { FAMOUS_TOKEN_REFS, type TokenRef } from '../lib/tokens'
 import { TokenTag } from './TokenTag'
 
-function famousMatches(query: string, excludeMint?: string): TokenRef[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return []
-  return FAMOUS_TOKEN_REFS.filter(
-    (t) =>
-      t.mint !== excludeMint &&
-      (t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q)),
-  )
+function shortMint(mint: string) {
+  return `${mint.slice(0, 4)}…${mint.slice(-4)}`
 }
 
+function toTokenRef(t: VerifiedTokenEntry): TokenRef {
+  return { key: t.address, mint: t.address, symbol: t.symbol, name: t.name, logoURI: t.logoURI }
+}
+
+type Tab = 'top' | 'hot'
+
+// Only these two curated, Jupiter-ranked pools are selectable — not any
+// arbitrary "verified" token — so a challenge can't be created against
+// something obscure or freshly-deployed with a copycat symbol.
 export function TokenSearchPicker({
   onSelect,
   excludeMint,
-  placeholder = 'Search a verified token, or paste a mint address',
+  placeholder = 'Search by name or symbol',
 }: {
   onSelect: (token: TokenRef) => void
   excludeMint?: string
   placeholder?: string
 }) {
+  const [tab, setTab] = useState<Tab>('top')
   const [query, setQuery] = useState('')
-  const { tokens, status } = useVerifiedTokenList()
+  const top = useTopTokens()
+  const trending = useTrendingTokens()
+  const active = tab === 'top' ? top : trending
 
   const results = useMemo(() => {
-    const famous = famousMatches(query, excludeMint)
-    const famousMints = new Set(famous.map((t) => t.mint))
-    const verified = searchVerified(tokens, query, 8)
-      .filter((t) => t.address !== excludeMint && !famousMints.has(t.address))
-      .map<TokenRef>((t) => ({
-        key: t.address,
-        mint: t.address,
-        symbol: t.symbol,
-        name: t.name,
-        logoURI: t.logoURI,
-      }))
-    return [...famous, ...verified].slice(0, 8)
-  }, [query, tokens, excludeMint])
-
-  const trimmed = query.trim()
-  const showAddressCheck =
-    looksLikeMintAddress(trimmed) && trimmed !== excludeMint && results.every((r) => r.mint !== trimmed)
-  const addressMatch = showAddressCheck ? findVerifiedByMint(tokens, trimmed) : undefined
-
-  function pick(token: TokenRef) {
-    onSelect(token)
-    setQuery('')
-  }
+    const pool = active.tokens.length > 0 ? active.tokens : FAMOUS_TOKEN_REFS
+    if (active.tokens.length > 0) {
+      return searchWithin(pool as VerifiedTokenEntry[], query, 12).filter((t) => t.address !== excludeMint)
+    }
+    // Fallback pool (famous coins) is already TokenRef-shaped.
+    const q = query.trim().toLowerCase()
+    return (pool as TokenRef[])
+      .filter((t) => t.mint !== excludeMint)
+      .filter((t) => !q || t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q))
+      .slice(0, 12)
+  }, [active.tokens, query, excludeMint])
 
   return (
     <div className="space-y-2">
+      <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-line w-fit">
+        {(['top', 'hot'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+              tab === t ? 'bg-brand text-white' : 'text-mist hover:text-white'
+            }`}
+          >
+            {t === 'top' ? 'Top 1000' : '🔥 Hot'}
+          </button>
+        ))}
+      </div>
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
         className="w-full bg-white/5 border border-line rounded-lg px-3 py-2 text-sm"
       />
-      {status === 'error' && (
+      {active.status === 'error' && (
         <p className="text-xs text-lose">
-          Verified token list unavailable right now — only famous coins are searchable.
+          {tab === 'top' ? 'Top' : 'Trending'} token list unavailable right now — showing famous
+          coins only.
         </p>
+      )}
+      {active.status === 'loading' && active.tokens.length === 0 && (
+        <p className="text-xs text-mist">Loading {tab === 'top' ? 'top' : 'trending'} tokens…</p>
       )}
       {results.length > 0 && (
-        <div className="rounded-lg border border-line divide-y divide-line overflow-hidden">
-          {results.map((t) => (
-            <button
-              key={t.mint}
-              type="button"
-              onClick={() => pick(t)}
-              className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 text-left"
-            >
-              <TokenTag token={t} size="sm" />
-              <span className="text-xs text-win shrink-0">verified</span>
-            </button>
-          ))}
+        <div className="rounded-lg border border-line divide-y divide-line overflow-hidden max-h-72 overflow-y-auto">
+          {results.map((t) => {
+            const ref = 'address' in t ? toTokenRef(t) : t
+            const mint = 'address' in t ? t.address : t.mint
+            return (
+              <button
+                key={mint}
+                type="button"
+                onClick={() => onSelect(ref)}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-white/5 text-left"
+              >
+                <TokenTag token={ref} size="sm" />
+                <span className="text-xs font-mono text-fog shrink-0">{shortMint(mint)}</span>
+              </button>
+            )
+          })}
         </div>
       )}
-      {showAddressCheck && status === 'loading' && (
-        <p className="text-xs text-mist">Checking verification…</p>
-      )}
-      {showAddressCheck && status === 'ready' && addressMatch && (
-        <button
-          type="button"
-          onClick={() =>
-            pick({
-              key: addressMatch.address,
-              mint: addressMatch.address,
-              symbol: addressMatch.symbol,
-              name: addressMatch.name,
-              logoURI: addressMatch.logoURI,
-            })
-          }
-          className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-win/40 bg-win/10 hover:bg-win/20 text-left"
-        >
-          <TokenTag
-            token={{
-              key: addressMatch.address,
-              mint: addressMatch.address,
-              symbol: addressMatch.symbol,
-              name: addressMatch.name,
-              logoURI: addressMatch.logoURI,
-            }}
-            size="sm"
-          />
-          <span className="text-xs text-win shrink-0">✓ verified — use this</span>
-        </button>
-      )}
-      {showAddressCheck && status === 'ready' && !addressMatch && (
-        <p className="text-xs text-lose">
-          That address isn't on the verified token list — it can't be used here.
-        </p>
+      {results.length === 0 && query && (
+        <p className="text-xs text-fog">No match in {tab === 'top' ? 'the top 1000' : 'hot tokens'}.</p>
       )}
     </div>
   )
