@@ -15,7 +15,7 @@ export function Header() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-6">
           <NavLink to="/" className="flex items-center gap-2 shrink-0">
-            <span className="text-xl">⚔️</span>
+            <img src="/logo-mark.png" alt="" className="h-9 w-auto" />
             <span className="font-display font-bold text-lg tracking-tight">
               Degen Duels
             </span>
