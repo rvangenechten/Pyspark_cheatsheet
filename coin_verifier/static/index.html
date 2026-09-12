@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Coin Verifier</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: #0d1117; color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #8b949e; margin: 0 0 16px; }
+  .filters { color: #8b949e; margin-bottom: 16px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+  th { color: #8b949e; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td.summary { white-space: normal; max-width: 360px; color: #c9d1d9; }
+  tr:hover { background: #161b22; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge.ok { background: #133929; color: #3fb950; }
+  .badge.warn { background: #3a2a10; color: #d29922; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { color: #8b949e; padding: 40px 0; text-align: center; }
+  .refresh { float: right; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <button class="refresh" onclick="load(true)">Refresh</button>
+  <h1>Coin Verifier</h1>
+  <p class="sub">New tokens with a verified, cross-linked website + Twitter/X (both mention the ticker, and link to each other).</p>
+  <p class="filters" id="filters"></p>
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>Chain</th><th>Name</th><th>Symbol</th><th>Price</th><th>Mcap</th>
+        <th>Age (h)</th><th>Holders</th><th>Website</th><th>Twitter</th><th>Summary</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">No tokens currently pass all checks.</div>
+
+<script>
+function fmtUsd(n) {
+  if (n === null || n === undefined) return "—";
+  if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "k";
+  return "$" + Number(n).toFixed(2);
+}
+
+async function load(forceRefresh) {
+  const url = "/api/tokens?only_verified=true" + (forceRefresh ? "&refresh=true" : "");
+  const res = await fetch(url);
+  const data = await res.json();
+  const f = data.filters;
+  document.getElementById("filters").textContent =
+    `min mcap ${fmtUsd(f.minMarketCapUsd)} · min holders ${f.minHolders} · max age ${f.maxAgeHours}h · ${data.count} shown`;
+
+  const rows = document.getElementById("rows");
+  rows.innerHTML = "";
+  document.getElementById("empty").style.display = data.tokens.length ? "none" : "block";
+
+  for (const t of data.tokens) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${t.chain}</td>
+      <td><a href="${t.pairUrl || '#'}" target="_blank" rel="noopener">${t.name}</a></td>
+      <td>$${t.symbol}</td>
+      <td>${t.priceUsd ? Number(t.priceUsd).toPrecision(4) : "—"}</td>
+      <td>${fmtUsd(t.marketCapUsd)}</td>
+      <td>${t.ageHours ?? "—"}</td>
+      <td>${t.holders ?? "—"}</td>
+      <td>${t.website ? `<a href="${t.website}" target="_blank" rel="noopener">site</a>` : "—"}</td>
+      <td>${t.twitter ? `<a href="${t.twitter}" target="_blank" rel="noopener">x</a>` : "—"}</td>
+      <td class="summary">${t.summary || ""}</td>
+    `;
+    rows.appendChild(tr);
+  }
+}
+
+load(false);
+setInterval(() => load(false), 60000);
+</script>
+</body>
+</html>
