@@ -33,6 +33,15 @@ class Settings:
     # excluded (safer, default) or let through unverified on that one check?
     require_holder_data: bool = field(default_factory=lambda: _bool_env("REQUIRE_HOLDER_DATA", True))
 
+    # --- LLM summaries (Claude) ---
+    # Credentials are resolved by the Anthropic SDK itself (ANTHROPIC_API_KEY,
+    # ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile), so there's no key
+    # setting here - only whether to attempt summaries at all.
+    enable_llm_summary: bool = field(default_factory=lambda: _bool_env("ENABLE_LLM_SUMMARY", True))
+    summary_model: str = field(default_factory=lambda: os.environ.get("SUMMARY_MODEL", "claude-opus-5"))
+    summary_max_chars: int = field(default_factory=lambda: _int_env("SUMMARY_MAX_CHARS", 6000))
+    summary_timeout_seconds: float = field(default_factory=lambda: _float_env("SUMMARY_TIMEOUT_SECONDS", 30.0))
+
     # --- Optional third-party API keys (features degrade gracefully without them) ---
     birdeye_api_key: str | None = field(default_factory=lambda: os.environ.get("BIRDEYE_API_KEY"))
     helius_api_key: str | None = field(default_factory=lambda: os.environ.get("HELIUS_API_KEY"))

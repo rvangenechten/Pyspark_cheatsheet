@@ -25,6 +25,7 @@
   a { color: #58a6ff; text-decoration: none; }
   a:hover { text-decoration: underline; }
   .empty { color: #8b949e; padding: 40px 0; text-align: center; }
+  .src { color: #6e7681; font-size: 11px; }
   .refresh { float: right; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 </style>
 </head>
@@ -37,7 +38,7 @@
     <thead>
       <tr>
         <th>Chain</th><th>Name</th><th>Symbol</th><th>Price</th><th>Mcap</th>
-        <th>Age (h)</th><th>Holders</th><th>Website</th><th>Twitter</th><th>Summary</th>
+        <th>Age (h)</th><th>Holders</th><th>Website</th><th>Twitter</th><th>Summary</th><th>Flags</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
@@ -65,21 +66,76 @@ async function load(forceRefresh) {
   document.getElementById("empty").style.display = data.tokens.length ? "none" : "block";
 
   for (const t of data.tokens) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${t.chain}</td>
-      <td><a href="${t.pairUrl || '#'}" target="_blank" rel="noopener">${t.name}</a></td>
-      <td>$${t.symbol}</td>
-      <td>${t.priceUsd ? Number(t.priceUsd).toPrecision(4) : "—"}</td>
-      <td>${fmtUsd(t.marketCapUsd)}</td>
-      <td>${t.ageHours ?? "—"}</td>
-      <td>${t.holders ?? "—"}</td>
-      <td>${t.website ? `<a href="${t.website}" target="_blank" rel="noopener">site</a>` : "—"}</td>
-      <td>${t.twitter ? `<a href="${t.twitter}" target="_blank" rel="noopener">x</a>` : "—"}</td>
-      <td class="summary">${t.summary || ""}</td>
-    `;
-    rows.appendChild(tr);
+    rows.appendChild(buildRow(t));
   }
+}
+
+// Every string below originates from a token's own website or its DexScreener
+// listing - i.e. attacker-controlled. Build cells with textContent/DOM APIs,
+// never innerHTML, or a token site can ship script into this page.
+function cell(text) {
+  const td = document.createElement("td");
+  td.textContent = text ?? "—";
+  return td;
+}
+
+function linkCell(url, label) {
+  const td = document.createElement("td");
+  if (!url || !/^https?:\/\//i.test(url)) {
+    td.textContent = "—";
+    return td;
+  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = label;
+  td.appendChild(a);
+  return td;
+}
+
+function buildRow(t) {
+  const tr = document.createElement("tr");
+  tr.appendChild(cell(t.chain));
+  tr.appendChild(linkCell(t.pairUrl, t.name));
+  tr.appendChild(cell("$" + t.symbol));
+  tr.appendChild(cell(t.priceUsd ? Number(t.priceUsd).toPrecision(4) : "—"));
+  tr.appendChild(cell(fmtUsd(t.marketCapUsd)));
+  tr.appendChild(cell(t.ageHours ?? "—"));
+  tr.appendChild(cell(t.holders ?? "—"));
+  tr.appendChild(linkCell(t.website, "site"));
+  tr.appendChild(linkCell(t.twitter, "x"));
+
+  const summaryTd = document.createElement("td");
+  summaryTd.className = "summary";
+  if (t.category) {
+    const badge = document.createElement("span");
+    badge.className = "badge ok";
+    badge.textContent = t.category;
+    summaryTd.appendChild(badge);
+    summaryTd.appendChild(document.createTextNode(" "));
+  }
+  summaryTd.appendChild(document.createTextNode(t.summary || ""));
+  if (t.summarySource === "extractive") {
+    const note = document.createElement("span");
+    note.className = "src";
+    note.textContent = " (from page text)";
+    summaryTd.appendChild(note);
+  }
+  tr.appendChild(summaryTd);
+
+  const flagsTd = document.createElement("td");
+  flagsTd.className = "summary";
+  for (const flag of t.redFlags || []) {
+    const badge = document.createElement("span");
+    badge.className = "badge warn";
+    badge.textContent = flag;
+    flagsTd.appendChild(badge);
+    flagsTd.appendChild(document.createTextNode(" "));
+  }
+  tr.appendChild(flagsTd);
+
+  return tr;
 }
 
 load(false);

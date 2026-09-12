@@ -73,6 +73,7 @@ class WebsiteCheckResult:
     ticker_found: bool
     twitter_linked: bool
     summary: str | None
+    page_text: str = ""
     error: str | None = None
 
 
@@ -107,7 +108,13 @@ def check_website(client: httpx.Client, website_url: str, ticker: str, declared_
 
     summary = _build_summary(title=title, meta_desc=meta_desc, body_text=body_text, ticker=ticker)
 
-    return WebsiteCheckResult(reachable=True, ticker_found=ticker_found, twitter_linked=twitter_linked, summary=summary)
+    return WebsiteCheckResult(
+        reachable=True,
+        ticker_found=ticker_found,
+        twitter_linked=twitter_linked,
+        summary=summary,
+        page_text=" ".join([title, meta_desc, body_text]).strip(),
+    )
 
 
 def _build_summary(title: str, meta_desc: str, body_text: str, ticker: str, max_len: int = 280) -> str:

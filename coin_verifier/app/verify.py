@@ -12,6 +12,7 @@ from .dexscreener import DexScreenerClient, parse_pair
 from .holders import HolderCountProvider, default_provider
 from .models import CandidatePair, VerificationResult
 from .solana_metadata import fetch_onchain_socials
+from .summarize import summarize_project
 from .website_check import check_twitter_bio_mentions_website, check_website
 
 
@@ -70,6 +71,9 @@ def verify_token(
     twitter_linked = False
     twitter_bio_mentions_website: bool | None = None
     summary: str | None = None
+    summary_source: str | None = None
+    category: str | None = None
+    red_flags: list[str] = []
 
     if has_website:
         result = check_website(client, token.socials.website, token.symbol, token.socials.twitter)
@@ -79,10 +83,23 @@ def verify_token(
             ticker_found = result.ticker_found
             twitter_linked = result.twitter_linked
             summary = result.summary
+            summary_source = "extractive"
             if not ticker_found:
                 reasons.append("ticker not found on website")
             if has_twitter and not twitter_linked:
                 reasons.append("website does not link to the declared twitter")
+
+            llm = summarize_project(
+                name=token.name,
+                symbol=token.symbol,
+                website_url=token.socials.website,
+                page_text=result.page_text,
+            )
+            if llm is not None:
+                summary = llm.summary
+                summary_source = "claude"
+                category = llm.category
+                red_flags = llm.red_flags
 
         if has_website and has_twitter:
             twitter_bio_mentions_website = check_twitter_bio_mentions_website(
@@ -102,6 +119,9 @@ def verify_token(
         twitter_linked_on_website=twitter_linked,
         twitter_bio_mentions_website=twitter_bio_mentions_website,
         summary=summary,
+        summary_source=summary_source,
+        category=category,
+        red_flags=red_flags,
         verified=verified,
         reasons=reasons,
     )

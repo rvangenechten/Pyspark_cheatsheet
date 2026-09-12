@@ -46,6 +46,9 @@ class VerificationResult(BaseModel):
     twitter_bio_mentions_website: Optional[bool] = None  # None = not checked (no bearer token)
 
     summary: Optional[str] = None
+    summary_source: Optional[str] = None  # "claude" | "extractive"
+    category: Optional[str] = None
+    red_flags: list[str] = []
     verified: bool = False
     reasons: list[str] = []
 
@@ -69,6 +72,9 @@ class VerificationResult(BaseModel):
             "twitterLinkedOnWebsite": self.twitter_linked_on_website,
             "twitterBioMentionsWebsite": self.twitter_bio_mentions_website,
             "summary": self.summary,
+            "summarySource": self.summary_source,
+            "category": self.category,
+            "redFlags": self.red_flags,
             "verified": self.verified,
             "reasons": self.reasons,
         }
