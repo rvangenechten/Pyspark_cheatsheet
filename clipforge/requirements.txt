@@ -1,0 +1,10 @@
+# Core pipeline. Everything here is free and self-hosted.
+faster-whisper>=1.0.0   # word-level transcription on CPU
+yt-dlp>=2024.1.0        # pull a source video you have the rights to use
+
+# ffmpeg is a system dependency, not a pip package:
+#   apt install ffmpeg   /   brew install ffmpeg
+# It must be built with --enable-libass for burned-in captions.
+
+# Optional: LLM re-ranking of the heuristic shortlist (score.llm_rerank).
+# anthropic>=0.40.0

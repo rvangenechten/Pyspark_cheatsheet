@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipForge — Clips for B2B Podcasts</title>
+<meta name="description" content="Four ready-to-post vertical clips from every episode, every week. Free audit: three clips from your last episode, no charge.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --border: #e3e6ea;
+    --ink: #14171c;
+    --muted: #5b6472;
+    --accent: #1f6feb;
+    --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115;
+      --surface: #171a20;
+      --border: #272c35;
+      --ink: #eef1f5;
+      --muted: #9aa4b2;
+      --accent: #4c8dff;
+      --accent-ink: #0f1115;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --surface: #171a20; --border: #272c35;
+    --ink: #eef1f5; --muted: #9aa4b2; --accent: #4c8dff; --accent-ink: #0f1115;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+  header { padding: 72px 0 56px; }
+  h1 { font-size: clamp(2rem, 6vw, 3.1rem); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 18px; }
+  .lede { font-size: clamp(1.05rem, 2.4vw, 1.25rem); color: var(--muted); max-width: 56ch; margin: 0 0 32px; }
+  .cta {
+    display: inline-block; background: var(--accent); color: var(--accent-ink);
+    padding: 14px 26px; border-radius: 8px; font-weight: 650; text-decoration: none;
+  }
+  .cta:hover { filter: brightness(1.08); }
+  .cta-note { display: block; margin-top: 12px; color: var(--muted); font-size: .9rem; }
+  section { padding: 44px 0; border-top: 1px solid var(--border); }
+  h2 { font-size: 1.35rem; letter-spacing: -0.01em; margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .card h3 { margin: 0 0 8px; font-size: 1rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .94rem; }
+  .price { font-size: 1.9rem; font-weight: 700; margin: 6px 0 4px; letter-spacing: -0.02em; }
+  .price span { font-size: .85rem; font-weight: 400; color: var(--muted); }
+  .tag {
+    display: inline-block; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+    background: var(--accent); color: var(--accent-ink); padding: 3px 8px; border-radius: 999px; margin-bottom: 10px;
+  }
+  ul.clean { list-style: none; padding: 0; margin: 12px 0 0; }
+  ul.clean li { padding-left: 22px; position: relative; color: var(--muted); font-size: .94rem; margin-bottom: 7px; }
+  ul.clean li::before { content: "→"; position: absolute; left: 0; color: var(--accent); }
+  .reels { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .reel {
+    aspect-ratio: 9 / 16; background: var(--surface); border: 1px dashed var(--border);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: .82rem; text-align: center; padding: 12px;
+  }
+  .qa { margin-bottom: 22px; }
+  .qa p { margin: 6px 0 0; color: var(--muted); }
+  footer { padding: 40px 0 64px; color: var(--muted); font-size: .88rem; border-top: 1px solid var(--border); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Four clips from every episode.<br>Every week. Without you thinking about it.</h1>
+    <p class="lede">
+      You record a podcast that's genuinely good and it lives at 45 minutes long
+      in one place. We cut the four moments worth posting, caption them, write
+      the copy, and hand them over ready to publish.
+    </p>
+    <a class="cta" href="mailto:REPLACE@example.com?subject=Free%20clip%20audit">Get three free clips</a>
+    <span class="cta-note">From your last episode. No charge, nothing to sign.</span>
+  </header>
+
+  <section>
+    <h2>Recent work</h2>
+    <div class="reels">
+      <div class="reel">Replace with your clip<br>(video or GIF, 9:16)</div>
+      <div class="reel">Replace with your clip</div>
+      <div class="reel">Replace with your clip</div>
+      <div class="reel">Replace with your clip</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>1. You publish as normal</h3>
+        <p>Drop the episode file in a shared folder, or just send the link. Nothing changes about how you record.</p>
+      </div>
+      <div class="card">
+        <h3>2. We find the moments</h3>
+        <p>Every episode is transcribed and scored for the things that actually hold a viewer: a real hook, a closed loop, and no missing context.</p>
+      </div>
+      <div class="card">
+        <h3>3. You get posting-ready files</h3>
+        <p>Vertical, captioned, titled, with suggested copy. Within 48 hours of your episode going up.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pricing</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Starter</h3>
+        <div class="price">$750<span>/mo</span></div>
+        <ul class="clean">
+          <li>8 clips per month</li>
+          <li>Burned-in captions</li>
+          <li>Titles and post copy</li>
+          <li>48-hour turnaround</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Most shows pick this</span>
+        <h3>Growth</h3>
+        <div class="price">$1,500<span>/mo</span></div>
+        <ul class="clean">
+          <li>20 clips per month</li>
+          <li>Two hook versions on the best four</li>
+          <li>Thumbnail frames</li>
+          <li>Monthly performance readout</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Scale</h3>
+        <div class="price">$3,000<span>/mo</span></div>
+        <ul class="clean">
+          <li>40 clips per month</li>
+          <li>Multi-platform reformatting</li>
+          <li>We post to your accounts</li>
+          <li>Quarterly strategy session</li>
+        </ul>
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:.9rem;margin-top:18px">
+      Month to month. Leave whenever. No setup fee.
+    </p>
+  </section>
+
+  <section>
+    <h2>Questions people actually ask</h2>
+    <div class="qa">
+      <strong>Why not just use an AI clipping tool for $15 a month?</strong>
+      <p>You can, and it's a fair deal. It'll give you thirty clips ranked by a
+      score, and then somebody has to watch all thirty, pick four, fix the
+      captions, write the copy and post them. That somebody is the part that
+      never happens. We use automated tooling too — that's why this is priced
+      the way it is. What you're paying for is four finished clips arriving
+      every week, picked by someone who has watched a lot of episodes in your
+      industry.</p>
+    </div>
+    <div class="qa">
+      <strong>Do you guarantee views?</strong>
+      <p>No, and be wary of anyone who does. Platform distribution changes
+      monthly and nobody controls it. We guarantee the clips, the turnaround,
+      and that you can leave any month.</p>
+    </div>
+    <div class="qa">
+      <strong>Who owns the clips?</strong>
+      <p>You do, outright, from the moment the invoice is paid.</p>
+    </div>
+    <div class="qa">
+      <strong>What about guests?</strong>
+      <p>We only clip footage you have the rights to. If a guest hasn't agreed
+      to commercial reuse, tell us and that episode stays off the list.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Start with the free audit</h2>
+    <p style="color:var(--muted);max-width:56ch">
+      Send one episode. You get three clips back within two days, plus a short
+      note on what your long-form is leaving on the table. If they're useful
+      we'll talk. If not, keep them.
+    </p>
+    <p><a class="cta" href="mailto:REPLACE@example.com?subject=Free%20clip%20audit">Send an episode</a></p>
+  </section>
+
+  <footer>
+    <p>ClipForge — clips for B2B podcasts. <a href="mailto:REPLACE@example.com">REPLACE@example.com</a></p>
+    <p style="font-size:.8rem">Before publishing: replace the placeholder email, swap the four reel tiles for real clips, and change the vertical wording to the one you picked.</p>
+  </footer>
+
+</div>
+</body>
+</html>

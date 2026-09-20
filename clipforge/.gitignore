@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+clips/
+*.mp4
+*.mkv
+*.webm
+*.wav
+transcript.json
