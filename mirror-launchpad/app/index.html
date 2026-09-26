@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mirror Launchpad</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #14171c; --line: #242a33; --text: #e8ecf1; --muted: #8a94a3;
+    --accent: #c6f432; --accent-ink: #0b0d10; --good: #3ddc84; --bad: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--line); gap: 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 9px 14px; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font: inherit; min-width: 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row input { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .preview { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+  .icon { width: 40px; height: 40px; border-radius: 50%; background: var(--line); object-fit: cover; flex: none; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tok { display: flex; gap: 10px; align-items: center; }
+  .badge { font-size: 11px; padding: 2px 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .ok { color: var(--good); } .short { color: var(--bad); }
+  .trade { display: grid; gap: 10px; }
+  .tabs button { flex: 1; }
+  .tabs button:not(.on) { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  #log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); white-space: pre-wrap; max-height: 160px; overflow: auto; }
+  .scroll { overflow-x: auto; }
+  @media (max-width: 640px) { .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mirror Launchpad <span>Solana → Robinhood Chain</span></h1>
+  <button id="connect">Connect wallet</button>
+</header>
+
+<main>
+  <section>
+    <h2>Launch a mirror</h2>
+    <p class="muted">Paste a Solana token mint. The mirror gets the same name, symbol, decimals and icon, and every unit is backed 1:1 by the real token in the vault.</p>
+    <div class="row">
+      <input id="mint" placeholder="Solana mint address, e.g. DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" />
+      <button id="lookup" class="ghost">Preview</button>
+      <button id="launch" disabled>Launch</button>
+    </div>
+    <div id="preview"></div>
+  </section>
+
+  <section>
+    <h2>Mirrors</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Token</th><th class="num">Price</th><th class="num hide-sm">Source mcap</th><th class="num hide-sm">Mirror supply</th><th class="num">Backing</th><th></th></tr></thead>
+        <tbody id="mirrors"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tradeBox" hidden>
+    <h2 id="tradeTitle">Trade</h2>
+    <div class="trade">
+      <div class="row tabs"><button id="tabBuy" class="on">Buy</button><button id="tabSell">Sell</button></div>
+      <div class="row">
+        <input id="amount" type="number" min="0" step="any" placeholder="Amount" />
+        <span id="unit" class="muted">USDC</span>
+      </div>
+      <div class="row">
+        <label class="muted" for="slip">Max slippage</label>
+        <select id="slip"><option value="50">0.5%</option><option value="100" selected>1%</option><option value="300">3%</option></select>
+        <span id="quote" class="muted"></span>
+      </div>
+      <div class="row"><button id="submit" disabled>Buy</button><span id="bal" class="muted"></span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <div id="log">—</div>
+  </section>
+</main>
+
+<script type="module">
+import {
+  createPublicClient, createWalletClient, custom, http, parseAbi, formatUnits, parseUnits, defineChain, parseEventLogs,
+} from "https://esm.sh/viem@2";
+
+// Relayer API; override with ?api=https://your-relayer
+const API = new URLSearchParams(location.search).get("api") ?? "http://localhost:8787";
+
+const gatewayAbi = parseAbi([
+  "function requestLaunch(string sourceToken)",
+  "function buy(address token, uint256 quoteIn, uint256 minTokensOut, uint64 deadline) returns (uint256)",
+  "function sell(address token, uint256 tokensIn, uint256 minQuoteOut, uint64 deadline) returns (uint256)",
+  "event BuyFilled(uint256 indexed orderId, uint256 tokensOut, string solanaTx)",
+  "event SellFilled(uint256 indexed orderId, uint256 quoteOut, uint256 fee, string solanaTx)",
+  "event OrderCancelled(uint256 indexed orderId, string reason)",
+  "event BuyRequested(uint256 indexed orderId, address indexed user, address indexed token, string sourceToken, uint256 quoteIn, uint256 minTokensOut, uint64 deadline)",
+  "event SellRequested(uint256 indexed orderId, address indexed user, address indexed token, string sourceToken, uint256 tokensIn, uint256 minQuoteOut, uint64 deadline)",
+]);
+const erc20Abi = parseAbi([
+  "function approve(address,uint256) returns (bool)",
+  "function allowance(address,address) view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
+]);
+
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const el = $("log"); el.textContent = (el.textContent === "—" ? "" : el.textContent + "\n") + `${new Date().toLocaleTimeString()}  ${m}`; el.scrollTop = el.scrollHeight; };
+const api = async (p) => { const r = await fetch(API + p); if (!r.ok) throw new Error((await r.json()).error ?? r.status); return r.json(); };
+const usd = (n) => n == null ? "—" : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toPrecision(4)}`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const safeUrl = (u) => /^https:\/\//.test(u ?? "") ? esc(u) : "";
+
+let cfg, chain, pub, wallet, account, mirrors = [], selected, side = "buy";
+
+async function init() {
+  try {
+    cfg = await api("/api/config");
+  } catch (e) {
+    log(`Relayer API not reachable at ${API} (${e.message})`);
+    $("mirrors").innerHTML = `<tr><td colspan="6" class="muted">Relayer API not reachable.</td></tr>`;
+    return;
+  }
+  chain = defineChain({
+    id: cfg.chainId, name: cfg.chainId === 4663 ? "Robinhood Chain" : "Robinhood Chain Testnet",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [cfg.rpcUrl] } },
+  });
+  pub = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
+  await loadMirrors();
+  setInterval(loadMirrors, 15000);
+}
+
+async function loadMirrors() {
+  mirrors = await api("/api/mirrors");
+  $("mirrors").innerHTML = mirrors.length ? mirrors.map((m, i) => `
+    <tr>
+      <td><div class="tok"><img class="icon" src="${safeUrl(m.logoURI)}" alt="" /><div><b>${esc(m.symbol)}</b> <span class="badge">mirror</span><div class="muted">${esc(m.name)}</div></div></div></td>
+      <td class="num">${usd(m.usdPrice)}</td>
+      <td class="num hide-sm">${usd(m.sourceMcap)}</td>
+      <td class="num hide-sm">${Number(formatUnits(BigInt(m.mirrorSupply), m.decimals)).toLocaleString()}</td>
+      <td class="num ${m.fullyBacked ? "ok" : "short"}">${m.fullyBacked ? "100%" : "short"}</td>
+      <td class="num"><button class="ghost" data-i="${i}">Trade</button></td>
+    </tr>`).join("") : `<tr><td colspan="6" class="muted">No mirrors yet. Launch the first one above.</td></tr>`;
+  document.querySelectorAll("#mirrors button[data-i]").forEach((b) => b.onclick = () => select(mirrors[b.dataset.i]));
+}
+
+async function connect() {
+  if (!window.ethereum) return log("No browser wallet found");
+  wallet = createWalletClient({ chain, transport: custom(window.ethereum) });
+  [account] = await wallet.requestAddresses();
+  try { await wallet.switchChain({ id: chain.id }); } catch { await wallet.addChain({ chain }); }
+  $("connect").textContent = `${account.slice(0, 6)}…${account.slice(-4)}`;
+  $("launch").disabled = !$("preview").dataset.mint;
+  refreshTrade();
+}
+
+async function lookup() {
+  const mint = $("mint").value.trim();
+  $("preview").innerHTML = "";
+  delete $("preview").dataset.mint;
+  $("launch").disabled = true;
+  if (!mint) return;
+  try {
+    const t = await api(`/api/token?mint=${encodeURIComponent(mint)}`);
+    const exists = mirrors.find((m) => m.sourceToken === mint);
+    $("preview").innerHTML = `<div class="preview"><img class="icon" src="${safeUrl(t.icon)}" alt="" />
+      <div><b>${esc(t.name)}</b> · ${esc(t.symbol)} · ${t.decimals} decimals<div class="muted">Price ${usd(t.usdPrice)} · mcap ${usd(t.mcap)}${exists ? " · already mirrored" : ""}</div></div></div>`;
+    if (!exists) { $("preview").dataset.mint = mint; $("launch").disabled = !account; }
+  } catch (e) { $("preview").innerHTML = `<p class="short">${esc(e.message)}</p>`; }
+}
+
+async function launch() {
+  const mint = $("preview").dataset.mint;
+  const hash = await wallet.writeContract({ account, address: cfg.gateway, abi: gatewayAbi, functionName: "requestLaunch", args: [mint] });
+  log(`Launch requested (${hash.slice(0, 10)}…). The relayer will deploy the mirror shortly.`);
+  $("launch").disabled = true;
+}
+
+function select(m) {
+  selected = m;
+  $("tradeBox").hidden = false;
+  $("tradeTitle").textContent = `Trade ${m.symbol}`;
+  $("tradeBox").scrollIntoView({ behavior: "smooth" });
+  setSide(side);
+}
+
+function setSide(s) {
+  side = s;
+  $("tabBuy").classList.toggle("on", s === "buy");
+  $("tabSell").classList.toggle("on", s === "sell");
+  $("unit").textContent = s === "buy" ? "USDC" : selected.symbol;
+  $("submit").textContent = s === "buy" ? "Buy" : "Sell";
+  refreshTrade();
+}
+
+function rawAmount() {
+  const v = $("amount").value;
+  if (!v || Number(v) <= 0) return 0n;
+  return parseUnits(v, side === "buy" ? 6 : selected.decimals);
+}
+
+let quoteSeq = 0, lastQuote;
+async function refreshTrade() {
+  if (!selected) return;
+  const seq = ++quoteSeq;
+  const amount = rawAmount();
+  lastQuote = undefined;
+  $("submit").disabled = true;
+  $("quote").textContent = "";
+  if (account) {
+    const bal = await pub.readContract({ address: side === "buy" ? cfg.quoteToken : selected.address, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+    $("bal").textContent = `Balance: ${formatUnits(bal, side === "buy" ? 6 : selected.decimals)} ${side === "buy" ? "USDC" : selected.symbol}`;
+  }
+  if (!amount) return;
+  // Buys spend amount minus the gateway fee; sells receive the quote minus the fee.
+  const fee = BigInt(cfg.feeBps);
+  const inAmt = side === "buy" ? amount - (amount * fee) / 10000n : amount;
+  const q = await api(`/api/quote?side=${side}&mint=${selected.sourceToken}&amount=${inAmt}`);
+  if (seq !== quoteSeq) return;
+  let out = BigInt(q.outAmount);
+  if (side === "sell") out -= (out * fee) / 10000n;
+  const minOut = out - (out * BigInt($("slip").value)) / 10000n;
+  lastQuote = { amount, minOut };
+  const outDec = side === "buy" ? selected.decimals : 6;
+  $("quote").textContent = `≈ ${Number(formatUnits(out, outDec)).toLocaleString()} ${side === "buy" ? selected.symbol : "USDC"} (min ${Number(formatUnits(minOut, outDec)).toLocaleString()})`;
+  $("submit").disabled = !account;
+}
+
+async function submit() {
+  const { amount, minOut } = lastQuote;
+  const spend = side === "buy" ? cfg.quoteToken : selected.address;
+  $("submit").disabled = true;
+  try {
+    const allowance = await pub.readContract({ address: spend, abi: erc20Abi, functionName: "allowance", args: [account, cfg.gateway] });
+    if (allowance < amount) {
+      const h = await wallet.writeContract({ account, address: spend, abi: erc20Abi, functionName: "approve", args: [cfg.gateway, amount] });
+      log("Approving…");
+      await pub.waitForTransactionReceipt({ hash: h });
+    }
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+    const hash = await wallet.writeContract({ account, address: cfg.gateway, abi: gatewayAbi, functionName: side, args: [selected.address, amount, minOut, deadline] });
+    const rcpt = await pub.waitForTransactionReceipt({ hash });
+    const [req] = parseEventLogs({ abi: gatewayAbi, logs: rcpt.logs, eventName: side === "buy" ? "BuyRequested" : "SellRequested" });
+    const id = req.args.orderId;
+    log(`Order #${id} placed. Waiting for the vault to ${side} on Solana via Jupiter…`);
+    watchOrder(id);
+  } catch (e) {
+    log(`Error: ${e.shortMessage ?? e.message}`);
+  }
+  refreshTrade();
+}
+
+function watchOrder(id) {
+  const stop = pub.watchContractEvent({
+    address: cfg.gateway, abi: gatewayAbi, args: { orderId: id }, pollingInterval: 2000,
+    onLogs: (logs) => {
+      for (const l of logs) {
+        if (l.eventName === "BuyFilled") log(`Order #${id} filled: received ${formatUnits(l.args.tokensOut, selected.decimals)} ${selected.symbol} (Solana tx ${l.args.solanaTx})`);
+        else if (l.eventName === "SellFilled") log(`Order #${id} filled: received ${formatUnits(l.args.quoteOut, 6)} USDC (Solana tx ${l.args.solanaTx})`);
+        else if (l.eventName === "OrderCancelled") log(`Order #${id} refunded: ${l.args.reason}`);
+        else continue;
+        stop(); refreshTrade(); loadMirrors();
+      }
+    },
+  });
+}
+
+$("connect").onclick = () => connect().catch((e) => log(e.shortMessage ?? e.message));
+$("lookup").onclick = lookup;
+$("launch").onclick = () => launch().catch((e) => log(e.shortMessage ?? e.message));
+$("tabBuy").onclick = () => setSide("buy");
+$("tabSell").onclick = () => setSide("sell");
+$("amount").oninput = () => refreshTrade().catch((e) => log(e.message));
+$("slip").onchange = () => refreshTrade().catch((e) => log(e.message));
+$("submit").onclick = submit;
+init();
+</script>
+</body>
+</html>
