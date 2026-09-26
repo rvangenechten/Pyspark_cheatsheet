@@ -1,41 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export interface JournalEntry {
-  side: "buy" | "sell";
-  state: "swapping" | "swapped";
-  signature?: string;
-  amountOut?: string;
-}
-
 interface State {
   lastBlock?: string;
-  orders: Record<string, JournalEntry>;
 }
 
 /**
- * Tiny write-through JSON store. Records each swap before and after it runs
- * so a restart never swaps twice for the same order.
+ * Remembers the last processed EVM block so restarts don't miss events.
+ * Which orders were swapped is tracked on-chain by vault receipts, not here.
  */
 export class Journal {
-  private state: State = { orders: {} };
+  private state: State = {};
 
   constructor(private readonly file?: string) {
     if (file && fs.existsSync(file)) this.state = JSON.parse(fs.readFileSync(file, "utf8"));
-  }
-
-  get(id: bigint) {
-    return this.state.orders[id.toString()];
-  }
-
-  set(id: bigint, entry: JournalEntry) {
-    this.state.orders[id.toString()] = entry;
-    this.flush();
-  }
-
-  done(id: bigint) {
-    delete this.state.orders[id.toString()];
-    this.flush();
   }
 
   get lastBlock(): bigint | undefined {

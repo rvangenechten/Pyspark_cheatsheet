@@ -1,0 +1,32 @@
+[package]
+name = "mirror-vault"
+version = "0.1.0"
+edition = "2021"
+description = "Custody program for the mirror launchpad: holds the backing tokens and only lets them move through capped Jupiter swaps that pay back into the vault."
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mirror_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+anchor-spl = "0.31.1"
+
+[dev-dependencies]
+solana-program-test = "2.3"
+solana-sdk = "2.3"
+spl-token = { version = "8", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "7", features = ["no-entrypoint"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+bincode = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(feature, values("custom-heap", "custom-panic", "anchor-debug"))'] }

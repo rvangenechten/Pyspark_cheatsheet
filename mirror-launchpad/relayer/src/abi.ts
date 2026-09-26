@@ -18,6 +18,8 @@ export const gatewayAbi = parseAbi([
   "function mirrorCount() view returns (uint256)",
   "function feeBps() view returns (uint16)",
   "function availableLiquidity() view returns (uint256)",
+  "function sellHeadroom() view returns (uint256)",
+  "function payoutRemaining() view returns (uint256)",
   "function quoteToken() view returns (address)",
 ]);
 

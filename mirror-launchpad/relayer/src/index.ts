@@ -15,10 +15,10 @@ async function main() {
   const gateway = new EvmGateway();
   const vault = new SolanaVault();
   const journal = new Journal(path.join(config.dataDir, "journal.json"));
+  const vaultConfig = await vault.checkConfig();
   const processor = new Processor({
     gateway,
     vault,
-    journal,
     tokenInfo: getTokenInfo,
     usdcMint: config.solanaUsdcMint,
     maxSlippageBps: config.maxSlippageBps,
@@ -26,7 +26,8 @@ async function main() {
   });
 
   console.log(`gateway ${gateway.address} on chain ${config.evmChainId}`);
-  console.log(`vault   ${vault.address} on Solana`);
+  console.log(`vault   ${vault.address} (program ${vault.program.programId.toBase58()}, admin ${vaultConfig.admin.toBase58()})`);
+  if (vaultConfig.paused) console.warn("vault is PAUSED: swaps will fail until the admin unpauses");
   startServer({ gateway, vault });
 
   let from = journal.lastBlock !== undefined ? journal.lastBlock + 1n : config.startBlock ?? (await gateway.pub.getBlockNumber());

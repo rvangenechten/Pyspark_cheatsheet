@@ -72,8 +72,8 @@ export class EvmGateway implements Gateway {
     return Number(await this.read<number>("feeBps"));
   }
 
-  availableLiquidity() {
-    return this.read<bigint>("availableLiquidity");
+  sellHeadroom() {
+    return this.read<bigint>("sellHeadroom");
   }
 
   async launch(sourceToken: string, name: string, symbol: string, decimals: number, logoURI: string) {

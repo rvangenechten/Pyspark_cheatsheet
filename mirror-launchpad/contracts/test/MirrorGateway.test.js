@@ -7,16 +7,16 @@ const usdc = (n) => ethers.parseUnits(String(n), 6);
 const bonk = (n) => ethers.parseUnits(String(n), 5);
 
 describe("MirrorGateway", () => {
-  let owner, relayer, alice, bob, quote, gw, token;
+  let owner, relayer, alice, bob, guardian, quote, gw, token;
 
   async function deadline(secs = 600) {
     return (await time.latest()) + secs;
   }
 
   beforeEach(async () => {
-    [owner, relayer, alice, bob] = await ethers.getSigners();
+    [owner, relayer, alice, bob, guardian] = await ethers.getSigners();
     quote = await (await ethers.getContractFactory("MockUSDC")).deploy();
-    gw = await (await ethers.getContractFactory("MirrorGateway")).deploy(owner, relayer, quote, 100); // 1%
+    gw = await (await ethers.getContractFactory("MirrorGateway")).deploy(owner, relayer, guardian, quote, 100, usdc(1_000)); // 1% fee, 1000 USDC/day payouts
 
     await gw.connect(relayer).launch(BONK, "Bonk", "Bonk", 5, "https://arweave.net/bonk.png");
     token = await ethers.getContractAt("MirrorToken", await gw.mirrorOf(BONK));
@@ -158,10 +158,47 @@ describe("MirrorGateway", () => {
 
       await gw.pause();
       await expect(gw.connect(alice).buy(token, usdc(1), 1, await deadline())).to.be.revertedWithCustomError(gw, "EnforcedPause");
+      await gw.unpause();
+      await gw.connect(guardian).pause();
+      await expect(gw.connect(alice).pause()).to.be.revertedWithCustomError(gw, "OwnableUnauthorizedAccount");
+      await expect(gw.connect(guardian).unpause()).to.be.revertedWithCustomError(gw, "OwnableUnauthorizedAccount");
       await gw.setRelayer(bob);
       await gw.unpause();
       await gw.connect(alice).buy(token, usdc(1), 1, await deadline());
       await gw.connect(bob).fulfillBuy(2, 1, "x");
+    });
+
+    it("hands ownership over in two steps (e.g. to a Safe)", async () => {
+      await gw.transferOwnership(bob);
+      expect(await gw.owner()).to.equal(owner.address);
+      await expect(gw.connect(alice).acceptOwnership()).to.be.revertedWithCustomError(gw, "OwnableUnauthorizedAccount");
+      await gw.connect(bob).acceptOwnership();
+      expect(await gw.owner()).to.equal(bob.address);
+      await expect(gw.setFeeBps(10)).to.be.revertedWithCustomError(gw, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  describe("payout cap", () => {
+    it("limits USDC paid to sellers per day", async () => {
+      await gw.connect(owner).depositLiquidity(usdc(5_000));
+      await gw.connect(alice).buy(token, usdc(100), 1, await deadline());
+      await gw.connect(relayer).fulfillBuy(1, bonk(3_000), "b");
+      await token.connect(alice).approve(gw, ethers.MaxUint256);
+      for (let i = 0; i < 3; i++) await gw.connect(alice).sell(token, bonk(1_000), 1, await deadline());
+
+      expect(await gw.sellHeadroom()).to.equal(usdc(1_000));
+      await gw.connect(relayer).fulfillSell(2, usdc(800), "s"); // net 792
+      expect(await gw.payoutRemaining()).to.equal(usdc(208));
+      expect(await gw.sellHeadroom()).to.equal(usdc(208));
+      await expect(gw.connect(relayer).fulfillSell(3, usdc(300), "s")).to.be.revertedWithCustomError(gw, "PayoutCapExceeded");
+
+      await time.increase(86_400);
+      expect(await gw.payoutRemaining()).to.equal(usdc(1_000));
+      await gw.connect(relayer).fulfillSell(3, usdc(300), "s");
+
+      await expect(gw.connect(alice).setPayoutCapPerDay(0)).to.be.revertedWithCustomError(gw, "OwnableUnauthorizedAccount");
+      await gw.setPayoutCapPerDay(0);
+      await expect(gw.connect(relayer).fulfillSell(4, usdc(1), "s")).to.be.revertedWithCustomError(gw, "PayoutCapExceeded");
     });
   });
 });

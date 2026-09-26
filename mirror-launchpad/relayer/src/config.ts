@@ -17,8 +17,13 @@ export const config = {
 
   // Solana
   solanaRpcUrl: process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com",
-  /** Base58 secret key or JSON byte array of the vault wallet. */
-  vaultKey: () => req("VAULT_KEY"),
+  /** Deployed mirror-vault program id. */
+  vaultProgramId: () => req("VAULT_PROGRAM_ID"),
+  /**
+   * Operator key (base58 or JSON byte array). It can only request capped
+   * swaps through the vault program; it can't withdraw. Needs SOL for fees.
+   */
+  operatorKey: () => req("OPERATOR_KEY"),
   /** USDC mint on Solana (the vault's settlement asset). */
   solanaUsdcMint: process.env.SOLANA_USDC_MINT ?? "EPjFWJd5Wt3rFpusYXYqRAa2V7NLHqGMuhgEGbSq3N9t",
 

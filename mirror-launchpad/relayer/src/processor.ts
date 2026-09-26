@@ -1,7 +1,6 @@
 import type { Vault } from "./vault.js";
-import { SwapFailed } from "./vault.js";
+import { SwapFailed, type SwapResult } from "./vault.js";
 import type { TokenInfo } from "./jupiter.js";
-import type { Journal } from "./journal.js";
 import { OrderStatus } from "./abi.js";
 
 export interface OrderState {
@@ -16,7 +15,8 @@ export interface Gateway {
   getOrder(id: bigint): Promise<OrderState>;
   mirrorOf(sourceToken: string): Promise<string | undefined>;
   feeBps(): Promise<number>;
-  availableLiquidity(): Promise<bigint>;
+  /** Largest gross USDC sell payout the gateway can settle now (liquidity and daily cap). */
+  sellHeadroom(): Promise<bigint>;
   launch(sourceToken: string, name: string, symbol: string, decimals: number, logoURI: string): Promise<string>;
   fulfillBuy(id: bigint, tokensOut: bigint, solanaTx: string): Promise<string>;
   fulfillSell(id: bigint, grossQuoteOut: bigint, solanaTx: string): Promise<string>;
@@ -26,7 +26,6 @@ export interface Gateway {
 export interface ProcessorDeps {
   gateway: Gateway;
   vault: Vault;
-  journal: Journal;
   tokenInfo(mint: string): Promise<TokenInfo | undefined>;
   usdcMint: string;
   maxSlippageBps: number;
@@ -86,6 +85,8 @@ export class Processor {
       return;
     }
 
+    // Vault account first, so the mirror is never tradable without one.
+    await vault.registerAsset(sourceToken);
     // Exact copy of the original: same name, symbol, decimals and icon.
     const token = await gateway.launch(sourceToken, info.name, info.symbol, onchain.decimals, info.icon ?? "");
     this.log(`launched mirror of ${info.symbol} (${sourceToken}) at ${token}`);
@@ -107,16 +108,8 @@ export class Processor {
     }
     const quote = await vault.quote(usdcMint, sourceToken, order.amountIn, slip);
 
-    const res = await this.swap(orderId, "buy", quote);
+    const res = await this.swap(orderId, quote);
     if (!res) return;
-    if (res.amountOut < order.minOut) {
-      // Can't happen with Jupiter's threshold, but never mint unbacked: the
-      // extra tokens stay in the vault as surplus and the user is refunded.
-      this.log(`order ${orderId}: got ${res.amountOut} < minOut ${order.minOut}, surplus kept in vault`);
-      await gateway.reject(orderId, "filled below minOut");
-      this.d.journal.done(orderId);
-      return;
-    }
     await this.fill(orderId, "buy", res.amountOut, res.signature);
   }
 
@@ -135,13 +128,13 @@ export class Processor {
       await gateway.reject(orderId, `price moved: quote ${first.outAmount} < minOut ${minGross}`);
       return;
     }
-    if ((await gateway.availableLiquidity()) < BigInt(first.outAmount)) {
+    if ((await gateway.sellHeadroom()) < BigInt(first.outAmount)) {
       await gateway.reject(orderId, "insufficient payout liquidity");
       return;
     }
     const quote = await vault.quote(sourceToken, usdcMint, order.amountIn, slip);
 
-    const res = await this.swap(orderId, "sell", quote);
+    const res = await this.swap(orderId, quote);
     if (!res) return;
     await this.fill(orderId, "sell", res.amountOut, res.signature);
   }
@@ -160,37 +153,40 @@ export class Processor {
   }
 
   /**
-   * Crash safety. If a swap for this order already landed, finish the fill
-   * instead of swapping again. If one was started but its outcome is
-   * unknown, stop and leave it for manual reconciliation.
+   * Crash safety. The vault program writes one receipt per order and refuses
+   * a second swap for it, so the receipt is the source of truth: if it exists
+   * the swap happened and we only need to finish the fill.
    */
   private async resume(orderId: bigint, side: "buy" | "sell"): Promise<boolean> {
-    const entry = this.d.journal.get(orderId);
-    if (!entry) return false;
-    if (entry.state === "swapped") {
-      await this.fill(orderId, side, BigInt(entry.amountOut!), entry.signature!);
-    } else if (entry.state === "swapping") {
-      this.log(`order ${orderId}: swap outcome unknown, needs manual reconciliation`);
-    }
+    const done = await this.d.vault.receipt(orderId);
+    if (!done) return false;
+    await this.settle(orderId, side, done);
     return true;
   }
 
-  private async swap(orderId: bigint, side: "buy" | "sell", quote: Awaited<ReturnType<Vault["quote"]>>) {
-    const { journal, gateway, vault } = this.d;
-    journal.set(orderId, { side, state: "swapping" });
+  private async swap(orderId: bigint, quote: Awaited<ReturnType<Vault["quote"]>>) {
+    const { gateway, vault } = this.d;
     try {
-      const res = await vault.swap(quote);
-      journal.set(orderId, { side, state: "swapped", signature: res.signature, amountOut: res.amountOut.toString() });
-      return res;
+      return await vault.swap(orderId, quote);
     } catch (e) {
+      // A retry of an earlier, slow transaction can fail because the first one
+      // landed. Check the receipt before deciding nothing happened.
+      const landed = await vault.receipt(orderId).catch(() => undefined);
+      if (landed) return landed;
       if (e instanceof SwapFailed) {
         // Failed on-chain (e.g. slippage threshold hit): nothing moved, safe to refund.
-        journal.done(orderId);
         await gateway.reject(orderId, "swap failed");
         return undefined;
       }
-      throw e; // unknown outcome, journal stays "swapping"
+      throw e; // outcome unknown; the retry re-checks the receipt first
     }
+  }
+
+  /** Fill from a receipt; min-out was enforced on-chain by the vault program. */
+  private async settle(orderId: bigint, side: "buy" | "sell", r: SwapResult) {
+    const order = await this.d.gateway.getOrder(orderId);
+    if (order.status !== OrderStatus.Pending) return;
+    await this.fill(orderId, side, r.amountOut, r.signature);
   }
 
   private async fill(orderId: bigint, side: "buy" | "sell", amountOut: bigint, sig: string) {
@@ -198,7 +194,6 @@ export class Processor {
       side === "buy"
         ? await this.d.gateway.fulfillBuy(orderId, amountOut, sig)
         : await this.d.gateway.fulfillSell(orderId, amountOut, sig);
-    this.d.journal.done(orderId);
     this.log(`order ${orderId} ${side} filled: ${amountOut} (solana ${sig}, evm ${tx})`);
   }
 }

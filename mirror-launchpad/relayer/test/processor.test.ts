@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
-import { Journal } from "../src/journal.js";
 import type { Quote } from "../src/jupiter.js";
 import { Processor, grossForNet, slippageFor, type Gateway, type OrderState } from "../src/processor.js";
 import { SwapFailed, type SwapResult, type Vault } from "../src/vault.js";
@@ -21,7 +20,7 @@ class FakeGateway implements Gateway {
   }
   async mirrorOf(s: string) { return this.mirrors.get(s); }
   async feeBps() { return this.fee; }
-  async availableLiquidity() { return this.liquidity; }
+  async sellHeadroom() { return this.liquidity; }
   async launch(s: string, name: string, symbol: string, decimals: number, logo: string) {
     this.calls.push(`launch ${s} ${name} ${symbol} ${decimals} ${logo}`);
     this.mirrors.set(s, "0xMIRROR");
@@ -40,7 +39,11 @@ class FakeVault implements Vault {
   rate: Record<string, number> = { [`${USDC}>${BONK}`]: 50_000, [`${BONK}>${USDC}`]: 1 / 50_000 };
   quotes: { slippageBps: number }[] = [];
   swaps = 0;
-  swapResult?: (q: Quote) => SwapResult | Error;
+  /** On-chain receipts by order id. */
+  receipts = new Map<bigint, SwapResult>();
+  registered: string[] = [];
+  /** Override a swap's outcome. `landed` = whether the tx still wrote a receipt. */
+  swapResult?: (q: Quote) => { result: SwapResult | Error; landed?: boolean };
 
   async quote(inputMint: string, outputMint: string, amount: bigint, slippageBps: number): Promise<Quote> {
     this.quotes.push({ slippageBps });
@@ -48,12 +51,17 @@ class FakeVault implements Vault {
     const threshold = (out * BigInt(10_000 - slippageBps)) / 10_000n;
     return { inputMint, outputMint, inAmount: amount.toString(), outAmount: out.toString(), otherAmountThreshold: threshold.toString(), slippageBps, priceImpactPct: "0" };
   }
-  async swap(q: Quote): Promise<SwapResult> {
+  async swap(orderId: bigint, q: Quote): Promise<SwapResult> {
+    if (this.receipts.has(orderId)) throw new SwapFailed("dup", "receipt already in use");
     this.swaps++;
-    const r = this.swapResult?.(q) ?? { signature: `sig${this.swaps}`, amountOut: BigInt(q.outAmount) };
-    if (r instanceof Error) throw r;
-    return r;
+    const ok = { signature: `sig${this.swaps}`, amountOut: BigInt(q.outAmount) };
+    const o = this.swapResult?.(q) ?? { result: ok, landed: true };
+    if (o.landed) this.receipts.set(orderId, ok);
+    if (o.result instanceof Error) throw o.result;
+    return o.result;
   }
+  async receipt(orderId: bigint) { return this.receipts.get(orderId); }
+  async registerAsset(mint: string) { this.registered.push(mint); }
   async balance() { return 0n; }
   async mintExists(m: string) { return m === BONK ? { decimals: 5 } : undefined; }
 }
@@ -76,16 +84,14 @@ describe("slippage helpers", () => {
 });
 
 describe("Processor", () => {
-  let gw: FakeGateway, vault: FakeVault, journal: Journal, p: Processor;
+  let gw: FakeGateway, vault: FakeVault, p: Processor;
 
   beforeEach(() => {
     gw = new FakeGateway();
     vault = new FakeVault();
-    journal = new Journal();
     p = new Processor({
       gateway: gw,
       vault,
-      journal,
       tokenInfo: async (m) => (m === BONK ? { id: BONK, name: "Bonk", symbol: "Bonk", decimals: 5, icon: "https://x/bonk.png" } : undefined),
       usdcMint: USDC,
       maxSlippageBps: 300,
@@ -100,6 +106,7 @@ describe("Processor", () => {
   it("launches an exact copy of the source token", async () => {
     await p.handleLaunchRequest(BONK);
     assert.deepEqual(gw.calls, ["launch BONK Bonk Bonk 5 https://x/bonk.png"]);
+    assert.deepEqual(vault.registered, [BONK]); // vault account exists before the mirror does
     await p.handleLaunchRequest(BONK); // already launched
     await p.handleLaunchRequest("NOPE"); // not a mint
     assert.equal(gw.calls.length, 1);
@@ -110,7 +117,7 @@ describe("Processor", () => {
     await p.handleBuy({ orderId: 1n, sourceToken: BONK });
     assert.deepEqual(gw.calls, ["fulfillBuy 1 50000000 sig1"]);
     assert.equal(vault.quotes.at(-1)!.slippageBps, 200); // (50M-49M)/50M
-    assert.equal(journal.get(1n), undefined);
+    assert.equal(vault.receipts.get(1n)?.amountOut, 50_000_000n);
   });
 
   it("rejects when the price already moved past minOut", async () => {
@@ -134,24 +141,48 @@ describe("Processor", () => {
 
   it("refunds when the swap fails on-chain", async () => {
     gw.orders.set(1n, pending(1_000n, 1n));
-    vault.swapResult = () => new SwapFailed("badsig", "SlippageToleranceExceeded");
+    vault.swapResult = () => ({ result: new SwapFailed("badsig", "SlippageToleranceExceeded") });
     await p.handleBuy({ orderId: 1n, sourceToken: BONK });
     assert.deepEqual(gw.calls, ["reject 1 swap failed"]);
   });
 
-  it("never swaps twice: resumes a landed swap, halts on unknown outcome", async () => {
+  it("resumes from the on-chain receipt instead of swapping again", async () => {
     gw.orders.set(1n, pending(1_000n, 1n));
-    vault.swapResult = () => new Error("RPC timeout");
-    await assert.rejects(p.handleBuy({ orderId: 1n, sourceToken: BONK }));
-    assert.equal(journal.get(1n)?.state, "swapping");
+    vault.receipts.set(1n, { signature: "landed", amountOut: 123n });
     await p.handleBuy({ orderId: 1n, sourceToken: BONK });
-    assert.equal(vault.swaps, 1);
+    assert.equal(vault.swaps, 0);
+    assert.deepEqual(gw.calls, ["fulfillBuy 1 123 landed"]);
+  });
+
+  it("unknown outcome: fills if the swap landed", async () => {
+    gw.orders.set(1n, pending(1_000n, 1n));
+    vault.swapResult = () => ({ result: new Error("RPC timeout"), landed: true });
+    await p.handleBuy({ orderId: 1n, sourceToken: BONK });
+    assert.deepEqual(gw.calls, ["fulfillBuy 1 50000000 sig1"]);
+  });
+
+  it("unknown outcome: leaves the order for retry, which swaps at most once", async () => {
+    gw.orders.set(1n, pending(1_000n, 1n));
+    vault.swapResult = () => ({ result: new Error("RPC timeout"), landed: false });
+    await assert.rejects(p.handleBuy({ orderId: 1n, sourceToken: BONK }));
     assert.deepEqual(gw.calls, []);
 
-    journal.set(1n, { side: "buy", state: "swapped", signature: "landed", amountOut: "123" });
+    vault.swapResult = undefined;
     await p.handleBuy({ orderId: 1n, sourceToken: BONK });
-    assert.equal(vault.swaps, 1);
-    assert.deepEqual(gw.calls, ["fulfillBuy 1 123 landed"]);
+    await p.handleBuy({ orderId: 1n, sourceToken: BONK }); // duplicate event
+    assert.equal(vault.swaps, 2);
+    assert.deepEqual(gw.calls, ["fulfillBuy 1 50000000 sig2"]);
+  });
+
+  it("a failed retry never refunds an order whose first swap landed", async () => {
+    gw.orders.set(1n, pending(1_000n, 1n));
+    // The retry fails on-chain because the earlier (slow) transaction took the receipt.
+    vault.swapResult = () => {
+      vault.receipts.set(1n, { signature: "first", amountOut: 7n });
+      return { result: new SwapFailed("second", "already in use") };
+    };
+    await p.handleBuy({ orderId: 1n, sourceToken: BONK });
+    assert.deepEqual(gw.calls, ["fulfillBuy 1 7 first"]);
   });
 
   it("sells from the vault and pays the gross USDC received", async () => {
@@ -162,7 +193,7 @@ describe("Processor", () => {
     assert.equal(vault.quotes.at(-1)!.slippageBps, 300);
   });
 
-  it("rejects sells the gateway can't pay out", async () => {
+  it("rejects sells the gateway can't pay out (liquidity or daily cap)", async () => {
     gw.orders.set(2n, pending(50_000_000n, 1n));
     gw.liquidity = 10n;
     await p.handleSell({ orderId: 2n, sourceToken: BONK });

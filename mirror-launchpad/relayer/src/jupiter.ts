@@ -38,23 +38,43 @@ export function getQuote(inputMint: string, outputMint: string, amount: bigint, 
     amount: amount.toString(),
     slippageBps: String(slippageBps),
     swapMode: "ExactIn",
+    // Leave room in the transaction for the vault program's own accounts.
+    maxAccounts: "48",
   });
   return jup<Quote>(`/swap/v1/quote?${q}`);
 }
 
-/** Returns a base64 serialized VersionedTransaction for the vault to sign. */
-export async function getSwapTx(quote: Quote, userPublicKey: string): Promise<string> {
-  const res = await jup<{ swapTransaction: string }>(`/swap/v1/swap`, {
+export interface JupIx {
+  programId: string;
+  accounts: { pubkey: string; isSigner: boolean; isWritable: boolean }[];
+  data: string; // base64
+}
+
+export interface SwapInstructions {
+  computeBudgetInstructions: JupIx[];
+  setupInstructions: JupIx[];
+  swapInstruction: JupIx;
+  cleanupInstruction?: JupIx;
+  addressLookupTableAddresses: string[];
+}
+
+/**
+ * Raw swap instruction for `user` (the vault PDA), paying out to
+ * `destinationTokenAccount` (the vault's own ATA). The vault program wraps
+ * it and signs for the PDA.
+ */
+export function getSwapInstructions(quote: Quote, user: string, destinationTokenAccount: string): Promise<SwapInstructions> {
+  return jup<SwapInstructions>(`/swap/v1/swap-instructions`, {
     method: "POST",
     body: JSON.stringify({
       quoteResponse: quote,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: true,
+      userPublicKey: user,
+      destinationTokenAccount,
+      useSharedAccounts: true,
+      wrapAndUnwrapSol: false,
       prioritizationFeeLamports: "auto",
     }),
   });
-  return res.swapTransaction;
 }
 
 /** Name, symbol, decimals, icon, price and mcap of a Solana token. */

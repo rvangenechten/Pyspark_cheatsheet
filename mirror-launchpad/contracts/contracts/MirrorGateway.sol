@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {MirrorToken} from "./MirrorToken.sol";
@@ -28,7 +29,12 @@ import {MirrorToken} from "./MirrorToken.sol";
 /// USDC settles against an inventory on each chain (USDC paid in here, USDC
 /// paid out on Solana and vice versa), so trades don't wait on a bridge. The
 /// owner rebalances the two inventories out of band.
-contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
+///
+/// Trust: the owner is meant to be a multisig (e.g. Safe), handed over with a
+/// two-step transfer. The relayer can only fill, reject and launch; USDC paid
+/// out to sellers is capped per day, so a leaked relayer key can lose at most
+/// that cap before the guardian pauses and the owner rotates the key.
+contract MirrorGateway is Ownable2Step, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     enum Side { Buy, Sell }
@@ -52,7 +58,13 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
     string public constant SOURCE_CHAIN = "solana";
 
     address public relayer;
+    /// @notice Can pause (not unpause) for fast incident response.
+    address public guardian;
     uint16 public feeBps;
+    /// @notice Max USDC paid to sellers per rolling day.
+    uint256 public payoutCapPerDay;
+    uint256 public payoutWindowStart;
+    uint256 public paidOutInWindow;
     uint256 public accruedFees;
     /// @dev USDC held for pending buys; not usable as payout liquidity.
     uint256 public escrowedQuote;
@@ -67,6 +79,8 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
     address[] public allMirrors;
 
     event RelayerUpdated(address relayer);
+    event GuardianUpdated(address guardian);
+    event PayoutCapUpdated(uint256 payoutCapPerDay);
     event FeeUpdated(uint16 feeBps);
     event LaunchRequested(string sourceToken, address indexed requester);
     event Launched(address indexed token, string sourceToken, string name, string symbol, uint8 decimals, string logoURI);
@@ -89,17 +103,27 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
     error Slippage();
     error NotAllowed();
     error InsufficientLiquidity();
+    error PayoutCapExceeded();
 
     modifier onlyRelayer() {
         if (msg.sender != relayer) revert NotRelayer();
         _;
     }
 
-    constructor(address owner_, address relayer_, IERC20 quoteToken_, uint16 feeBps_) Ownable(owner_) {
+    constructor(
+        address owner_,
+        address relayer_,
+        address guardian_,
+        IERC20 quoteToken_,
+        uint16 feeBps_,
+        uint256 payoutCapPerDay_
+    ) Ownable(owner_) {
         if (feeBps_ > MAX_FEE_BPS) revert BadFee();
         relayer = relayer_;
+        guardian = guardian_;
         quoteToken = quoteToken_;
         feeBps = feeBps_;
+        payoutCapPerDay = payoutCapPerDay_;
     }
 
     // ------------------------------------------------------------------
@@ -224,6 +248,7 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
         uint256 net = grossQuoteOut - fee;
         if (net == 0 || net < o.minOut) revert Slippage();
         if (net + fee > availableLiquidity()) revert InsufficientLiquidity();
+        _usePayout(net);
 
         o.status = Status.Filled;
         accruedFees += fee;
@@ -246,6 +271,19 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
     /// @notice USDC available to pay sellers.
     function availableLiquidity() public view returns (uint256) {
         return quoteToken.balanceOf(address(this)) - escrowedQuote - accruedFees;
+    }
+
+    /// @notice USDC that can still be paid out to sellers in the current day.
+    function payoutRemaining() public view returns (uint256) {
+        if (block.timestamp >= payoutWindowStart + 1 days) return payoutCapPerDay;
+        return payoutCapPerDay > paidOutInWindow ? payoutCapPerDay - paidOutInWindow : 0;
+    }
+
+    /// @notice Largest gross sell the gateway can settle right now.
+    function sellHeadroom() external view returns (uint256) {
+        uint256 liq = availableLiquidity();
+        uint256 cap = payoutRemaining();
+        return liq < cap ? liq : cap;
     }
 
     function depositLiquidity(uint256 amount) external {
@@ -271,13 +309,25 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
         emit RelayerUpdated(relayer_);
     }
 
+    function setGuardian(address guardian_) external onlyOwner {
+        guardian = guardian_;
+        emit GuardianUpdated(guardian_);
+    }
+
+    function setPayoutCapPerDay(uint256 cap) external onlyOwner {
+        payoutCapPerDay = cap;
+        emit PayoutCapUpdated(cap);
+    }
+
     function setFeeBps(uint16 feeBps_) external onlyOwner {
         if (feeBps_ > MAX_FEE_BPS) revert BadFee();
         feeBps = feeBps_;
         emit FeeUpdated(feeBps_);
     }
 
-    function pause() external onlyOwner {
+    /// @notice Owner or guardian can pause; only the owner can unpause.
+    function pause() external {
+        if (msg.sender != owner() && msg.sender != guardian) revert OwnableUnauthorizedAccount(msg.sender);
         _pause();
     }
 
@@ -288,6 +338,15 @@ contract MirrorGateway is Ownable, Pausable, ReentrancyGuard {
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    function _usePayout(uint256 amount) private {
+        if (block.timestamp >= payoutWindowStart + 1 days) {
+            payoutWindowStart = block.timestamp;
+            paidOutInWindow = 0;
+        }
+        paidOutInWindow += amount;
+        if (paidOutInWindow > payoutCapPerDay) revert PayoutCapExceeded();
+    }
 
     function _refund(uint256 orderId, Order storage o, string memory reason) private {
         o.status = Status.Cancelled;

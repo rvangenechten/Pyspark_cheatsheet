@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.mainnet]
+mirror_vault = "77e98v62pJJkauey8tz3GS6wGU3CghkZD8ob6MTRU7y2"
+
+[programs.localnet]
+mirror_vault = "77e98v62pJJkauey8tz3GS6wGU3CghkZD8ob6MTRU7y2"
+
+[provider]
+cluster = "mainnet"
+wallet = "~/.config/solana/id.json"
