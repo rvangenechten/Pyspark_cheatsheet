@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Pump.fun Cost Basis Map",
+  "version": "1.0.0",
+  "description": "Shows the price levels where current holders of a pump.fun token bought, and how much supply is in profit vs. underwater.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://pump.fun/*", "https://frontend-api-v3.pump.fun/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://pump.fun/*"],
+      "js": ["analysis.js", "content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

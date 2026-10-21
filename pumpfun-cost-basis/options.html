@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Pump.fun Cost Basis Map Options</title>
+<style>body{font:14px system-ui,sans-serif;padding:16px;max-width:480px}label{display:block;margin:12px 0 4px}input{width:100%;padding:6px}</style>
+</head>
+<body>
+  <h2>Pump.fun Cost Basis Map</h2>
+  <label for="apiBase">API base URL</label>
+  <input id="apiBase" type="url">
+  <label for="maxTrades">Max trades to fetch (higher means more history but slower)</label>
+  <input id="maxTrades" type="number" min="200" step="200">
+  <p><button id="save">Save</button> <span id="msg"></span></p>
+  <script src="options.js"></script>
+</body>
+</html>
